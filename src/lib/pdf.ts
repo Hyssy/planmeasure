@@ -174,3 +174,13 @@ export async function getPageText(sheet: SheetMeta): Promise<PageText> {
   }
   return { text: parts.join(' '), items }
 }
+
+/**
+ * Converter from our page points (displayed page, origin top-left) to the PDF's
+ * own coordinates, for drawing into the original page on export.
+ */
+export async function getPageToPdf(sheet: SheetMeta): Promise<(p: { x: number; y: number }) => [number, number]> {
+  const page = await getPage(sheet)
+  const viewport = page.getViewport({ scale: 1 })
+  return (p) => viewport.convertToPdfPoint(p.x, p.y) as [number, number]
+}

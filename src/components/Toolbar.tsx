@@ -1,5 +1,6 @@
-import { useRef } from 'react'
+import { useRef, useState } from 'react'
 import { useApp, type Tool } from '../store'
+import ExportPdfDialog from './ExportPdfDialog'
 import ProjectMenu from './ProjectMenu'
 
 const TOOL_GROUPS: { id: Tool; label: string; key: string; hint: string }[][] = [
@@ -77,6 +78,8 @@ export default function Toolbar() {
         <UndoRedo />
         <div className="mx-1 h-6 w-px bg-neutral-200" />
         <Layers />
+        <div className="mx-1 h-6 w-px bg-neutral-200" />
+        <ExportPdfButton />
       </div>
       <span className="ml-auto hidden text-xs whitespace-nowrap text-neutral-500 2xl:inline">
         Scroll to zoom · Space+drag to pan · files stay on your computer
@@ -117,5 +120,23 @@ function Layers() {
         Markups
       </label>
     </div>
+  )
+}
+
+function ExportPdfButton() {
+  const hasProject = useApp((s) => s.projectId !== null && s.sheets.length > 0)
+  const [open, setOpen] = useState(false)
+  return (
+    <>
+      <button
+        onClick={() => setOpen(true)}
+        disabled={!hasProject}
+        title="Export a marked-up PDF: this page, marked-up pages or the whole document"
+        className="rounded-md border border-neutral-300 px-2.5 py-1.5 text-sm font-medium whitespace-nowrap hover:bg-neutral-100 disabled:opacity-40"
+      >
+        Export PDF
+      </button>
+      {open && <ExportPdfDialog onClose={() => setOpen(false)} />}
+    </>
   )
 }

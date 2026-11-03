@@ -54,6 +54,7 @@ A browser-based PDF takeoff and markup tool for construction plans (architectura
 
 ## Takeoff features
 - Tools: **Linear** (polyline), **Area** (polygon, with optional cut-outs/deductions), **Perimeter**, **Count** (click markers).
+- Drawing styles (added by Jordan): Area and Perimeter can be drawn as **Polygon, Rectangle or Freehand**; Linear as **Lines or Freehand**. Freehand strokes are simplified with a tight tolerance so quantities stay within 0.5%.
 - Quantities are grouped by **Item** (e.g. "Internal wall – plasterboard", "Floor tiles"), with a name, colour, unit, and optional trade/category.
 - Running totals per item, per sheet, and for the whole project.
 - Select, move, edit vertices, delete, undo/redo.
@@ -63,7 +64,7 @@ A browser-based PDF takeoff and markup tool for construction plans (architectura
 - Revision cloud, rectangle, ellipse, arrow, line, freehand, text box, highlight.
 - Colour and line weight picker.
 - Layers: Takeoff and Markup can be shown or hidden separately.
-- Export a flattened marked-up PDF with pdf-lib.
+- Export a flattened marked-up PDF with pdf-lib (built with Phase 6). Options: **This page / Marked-up pages only / Whole document** (decided by Jordan). The export shows the visible layers — markups and/or takeoff shapes, optionally with item names and quantities; a "marked-up page" is any page with something drawn on it. Pages from several PDFs combine into one file; original drawings are copied unchanged (vector), shapes are drawn into the page.
 
 ## UI layout
 - Left: sheet list (thumbnails + labels + scale status).
@@ -78,8 +79,8 @@ A browser-based PDF takeoff and markup tool for construction plans (architectura
 3. **Sheet labelling**: auto-detect sheet number/title, editable sheet list.
 4. **Takeoff**: linear, area, count with items and a totals panel. Unit tests for the maths.
 5. **Save/load**: IndexedDB autosave, project export/import (.json).
-6. **Markup**: markup tools + markup layer.
-7. **Exports**: CSV/Excel quantities, marked-up PDF.
+6. **Markup**: markup tools + markup layer, takeoff drawing styles, and the marked-up PDF export.
+7. **Exports**: CSV/Excel quantities.
 8. **Deploy**: Cloudflare Pages from the GitHub repo.
 9. **Nice-to-haves**: compare two revisions, print-ready quantity report, whole-page OCR. (Title-block OCR for flattened sets was done after Phase 3.)
 
