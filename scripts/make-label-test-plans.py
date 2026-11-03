@@ -103,6 +103,24 @@ for i, (n, t) in enumerate([("A-000", "COVER SHEET"), ("A-101", "GROUND FLOOR PL
 title_block_below(p, "A-000", "COVER SHEET", "NTS")
 pages.append(p)
 
+# 7. A1 with a DA-style title block: small underlined headings ending in ":"
+p = Page(841, 594); p.plan_clutter()
+for (txt, x, y, size) in [
+    ("AMENDMENTS", 1500, 1555, 5), ("Project Title:", 1620, 1575, 13), ("Proposed Child Care", 1620, 1600, 13), ("Centre", 1620, 1620, 13),
+    ("DRAWING TITLE:", 1830, 1560, 5), ("Acoustic Barrier Details", 1830, 1580, 9),
+    ("ADDRESS:", 1830, 1638, 5), ("1 Kitty Lane, Cobbitty", 1830, 1655, 9),
+    ("CLIENT DETAILS:", 2010, 1560, 5), ("Cobbitty Childcare Holdings Pty Ltd", 2010, 1578, 9),
+    ("LOCAL GOVERNMENT AREA:", 2010, 1615, 5), ("Camden Council", 2012, 1630, 9),
+    ("Issue For:", 2050, 1645, 5), ("DA", 2050, 1652, 5), ("Issue:", 2125, 1645, 5), ("A", 2125, 1652, 5),
+    ("Date:", 2010, 1670, 5), ("11.5.2026", 2010, 1677, 5), ("Scale:", 2075, 1670, 5), ("1:100", 2075, 1677, 5),
+    ("Drawing #:", 2130, 1670, 5), ("A011", 2130, 1677, 5), ("Project #:", 2205, 1670, 5), ("10396", 2205, 1677, 5),
+]:
+    p.text(txt, x, y, size)
+    if txt.endswith(":") and size == 5:
+        p.line(x, y + 1.2, x + len(txt) * 2.9, y + 1.2)  # underline
+p.line(1480, 1545, 2370, 1545)
+pages.insert(5, p)
+
 # 6. A3 with no text at all (e.g. a scanned or flattened sheet)
 p = Page(420, 297); p.rect(mm(40), mm(40), mm(200), mm(150))
 pages.append(p)
@@ -141,5 +159,6 @@ print("Wrote test-plans/label-tests.pdf and test-plans/A-501 Door Schedule.pdf")
 
 EXPECTED = [
     ("A-101", "GROUND FLOOR PLAN"), ("S-200", "FOOTING DETAILS"), ("A-201", "ELEVATIONS"),
-    ("DA02", "SITE ANALYSIS"), ("A-000", "COVER SHEET"), ("", ""), ("A-501", "Door Schedule"),
+    ("DA02", "SITE ANALYSIS"), ("A-000", "COVER SHEET"), ("A011", "Acoustic Barrier Details"), ("", ""),
+    ("A-501", "Door Schedule"),
 ]

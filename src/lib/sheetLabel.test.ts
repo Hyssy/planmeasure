@@ -100,6 +100,39 @@ describe('labelled title blocks', () => {
   })
 })
 
+describe('title block with colon headings (DA set, Kitty Lane style)', () => {
+  // Small underlined headings ending in ":" with values below, laid out in columns.
+  const values = [
+    t('AMENDMENTS', 1500, 1555, 5),
+    t('Project Title:', 1620, 1575, 13), t('Proposed Child Care', 1620, 1600, 13), t('Centre', 1620, 1620, 13),
+    t('Acoustic Barrier Details', 1830, 1580, 9),
+    t('ADDRESS:', 1830, 1638, 5), t('1 Kitty Lane, Cobbitty', 1830, 1655, 9),
+    t('Cobbitty Childcare Holdings Pty Ltd', 2010, 1578, 9),
+    t('LOCAL GOVERNMENT AREA:', 2010, 1615, 5), t('Camden Council', 2012, 1630, 9),
+    t('Issue For:', 2050, 1645, 5), t('DA', 2050, 1652, 5), t('Issue:', 2125, 1645, 5), t('A', 2125, 1652, 5),
+    t('Date:', 2010, 1670, 5), t('11.5.2026', 2010, 1677, 5),
+    t('Scale:', 2075, 1670, 5), t('1:100', 2075, 1677, 5),
+    t('Drawing #:', 2130, 1670, 5), t('A011', 2130, 1677, 5),
+    t('Project #:', 2205, 1670, 5), t('10396', 2205, 1677, 5),
+  ]
+
+  it('reads the drawing title, not the client details', () => {
+    const items = [...planClutter, ...values, t('DRAWING TITLE:', 1830, 1560, 5), t('CLIENT DETAILS:', 2010, 1560, 5)]
+    expect(detectSheetLabel(items, W, H)).toEqual({ number: 'A011', title: 'Acoustic Barrier Details' })
+  })
+
+  it('still works when OCR reads two headings as one line', () => {
+    const merged = { str: 'DRAWING TITLE: CLIENT DETAILS:', x: 1830, y: 1560, size: 5, w: 2010 + 15 * 2.75 - 1830 }
+    const items = [...planClutter, ...values, merged]
+    expect(detectSheetLabel(items, W, H)).toEqual({ number: 'A011', title: 'Acoustic Barrier Details' })
+  })
+
+  it('never uses a heading as a title', () => {
+    const items = [t('DRAWING TITLE:', 1830, 1560, 5), t('CLIENT DETAILS:', 1900, 1560, 5)]
+    expect(detectSheetLabel(items, W, H).title).toBeNull()
+  })
+})
+
 describe('title blocks without labels', () => {
   it('uses the most prominent sheet number in the bottom-right and the largest wording near it', () => {
     const items = [

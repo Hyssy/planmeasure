@@ -21,20 +21,24 @@ export const OCR_REGIONS = [
 const TARGET_PX_PER_PT = 250 / 72
 const MAX_PIXELS = 12_000_000
 /** Words tesseract is less sure of than this are dropped. */
-const MIN_CONFIDENCE = 40
+const MIN_CONFIDENCE = 35
 
 let workerPromise: Promise<Worker> | null = null
 
 function getWorker(): Promise<Worker> {
-  workerPromise ??= import('tesseract.js').then(({ createWorker }) =>
-    createWorker('eng', 1 /* LSTM only */, {
+  workerPromise ??= import('tesseract.js').then(async ({ createWorker }) => {
+    const worker = await createWorker('eng', 1 /* LSTM only */, {
       workerPath: `${BASE}worker.min.js`,
       corePath: `${BASE}core`,
       langPath: `${BASE}lang`,
       gzip: true,
       workerBlobURL: false,
-    }),
-  )
+    })
+    // "Sparse text": find every scrap of text in no particular order. Title blocks are
+    // boxes of short fields, not paragraphs — the default page layout mode skips some.
+    await worker.setParameters({ tessedit_pageseg_mode: '11' as never, user_defined_dpi: '250' })
+    return worker
+  })
   return workerPromise
 }
 
@@ -65,7 +69,9 @@ export async function ocrSheetText(sheet: SheetMeta): Promise<PageText> {
     for (const block of data.blocks ?? []) {
       for (const para of block.paragraphs) {
         for (const line of para.lines) {
-          const lineH = (line.bbox.y1 - line.bbox.y0) / s
+          // Tesseract's row height (ascenders to descenders) matches the font size closely;
+          // the box height is smaller for capitals, so it's only a fallback.
+          const fontSize = (line.rowAttributes?.rowHeight || (line.bbox.y1 - line.bbox.y0) * 1.3) / s
           const baseline = ry + (line.baseline.y0 + line.baseline.y1) / 2 / s
           const words = line.words.filter((w) => w.confidence >= MIN_CONFIDENCE && w.text.trim())
           if (!words.length) continue
@@ -76,8 +82,7 @@ export async function ocrSheetText(sheet: SheetMeta): Promise<PageText> {
               x: rx + w.bbox.x0 / s,
               y: baseline,
               w: (w.bbox.x1 - w.bbox.x0) / s,
-              // a line box is about 1.2× the font size
-              size: lineH / 1.2,
+              size: fontSize,
             })
           }
         }

@@ -4,7 +4,7 @@ Needs pdftoppm (poppler) and Pillow. Run make-label-test-plans.py first."""
 import glob, os, subprocess, tempfile
 from PIL import Image
 
-DPI = 150
+DPI = 200
 with tempfile.TemporaryDirectory() as tmp:
     subprocess.run(["pdftoppm", "-r", str(DPI), "-gray", "-jpeg", "test-plans/label-tests.pdf", os.path.join(tmp, "p")], check=True)
     pages = [Image.open(f).convert("RGB") for f in sorted(glob.glob(os.path.join(tmp, "p-*.jpg")))]

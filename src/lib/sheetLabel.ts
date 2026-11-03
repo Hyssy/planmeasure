@@ -125,8 +125,25 @@ const TITLE_LABEL_RE = /^(?:(?:DRAWING|DWG|DRG|SHEET)\s+)?(?:TITLE|NAME)\s*[:.]?
 const FIELD_LABEL_RE =
   /^(PROJECT|CLIENT|ADDRESS|SITE|LOCATION|SCALE|DATE|DRAWN|CHECKED|APPROVED|DESIGNED|AUTHORISED|AUTHORIZED|REV|REVISION|ISSUE|STATUS|JOB|SHEET|NORTH|NOTES|AMENDMENT|DESCRIPTION|PURPOSE|STAGE|PAPER SIZE|SIZE|COPYRIGHT)(?:\s+(?:NO\.?|NUMBER|NAME|DATE|BY|SIZE))?\s*(?::.*)?$/i
 
+/**
+ * Is this phrase a title-block field heading rather than a value?
+ * Any short phrase ending in a colon counts ("Client details:", "Issue for:",
+ * "Project title:", "Drawing #:"), as do the common headings without one.
+ */
 function isFieldLabel(text: string): boolean {
-  return FIELD_LABEL_RE.test(text) || NUMBER_LABEL_STRICT_RE.test(text) || TITLE_LABEL_RE.test(text)
+  const t = text.trim()
+  if (/:$/.test(t) && t.split(/\s+/).length <= 4) return true
+  return FIELD_LABEL_RE.test(t) || NUMBER_LABEL_STRICT_RE.test(t) || TITLE_LABEL_RE.test(t)
+}
+
+/**
+ * Two headings read as one phrase ("DRAWING TITLE: CLIENT DETAILS:"): shrink
+ * the phrase to just the first heading, estimating its width from its share
+ * of the characters, so we look for its value under the right heading.
+ */
+function firstPartOf(p: Phrase, chars: number): Phrase {
+  const share = Math.min(1, chars / Math.max(1, p.text.length))
+  return { ...p, text: p.text.slice(0, chars).trim(), x2: p.x + (p.x2 - p.x) * share }
 }
 
 /** Is `p` on the same line as, and to the right of, `label`? */
@@ -141,6 +158,9 @@ function below(label: Phrase, p: Phrase, maxDrop: number): boolean {
   return dy > label.size * 0.5 && dy < maxDrop && overlaps
 }
 
+/** Values sit within at least this distance below their heading (12 mm), however small the heading. */
+const MIN_VALUE_DROP = (12 * 72) / 25.4
+
 function dist(a: Phrase, b: Phrase): number {
   return Math.hypot(a.x - b.x, a.y - b.y)
 }
@@ -151,10 +171,15 @@ function byTitleBlockFirst(phrases: Phrase[], pageW: number, pageH: number): Phr
 }
 
 function findLabelledNumber(phrases: Phrase[], pageW: number, pageH: number): string | null {
-  for (const label of byTitleBlockFirst(phrases, pageW, pageH)) {
+  for (let label of byTitleBlockFirst(phrases, pageW, pageH)) {
     if (!NUMBER_LABEL_STRICT_RE.test(label.text)) continue
     // Value in the same phrase: "DWG No: S-200"
-    const rest = label.text.replace(NUMBER_LABEL_RE, '').trim()
+    let rest = label.text.replace(NUMBER_LABEL_RE, '').trim()
+    if (rest && isFieldLabel(rest)) {
+      // "DRAWING #: PROJECT #:" — two headings; the value is below the first.
+      label = firstPartOf(label, label.text.length - rest.length)
+      rest = ''
+    }
     if (rest) {
       if (/^\d+\s*(?:OF|\/)\s*\d+/i.test(rest)) continue // "SHEET 3 OF 12" is a page count
       const token = rest.split(' ')[0]
@@ -163,7 +188,7 @@ function findLabelledNumber(phrases: Phrase[], pageW: number, pageH: number): st
     }
     // Value beside or below: nearest phrase that is a single number-like token.
     const near = phrases
-      .filter((p) => p !== label && (rightOf(label, p, pageW * 0.15) || below(label, p, label.size * 6)))
+      .filter((p) => p !== label && (rightOf(label, p, pageW * 0.15) || below(label, p, Math.max(label.size * 6, MIN_VALUE_DROP))))
       .filter((p) => looksLikeLabelledNumber(p.text.split(' ')[0]) && !isFieldLabel(p.text))
       .sort((a, b) => dist(label, a) - dist(label, b))
     if (near[0]) return clean(near[0].text.split(' ')[0])
@@ -172,9 +197,14 @@ function findLabelledNumber(phrases: Phrase[], pageW: number, pageH: number): st
 }
 
 function findLabelledTitle(phrases: Phrase[], pageW: number, pageH: number): string | null {
-  for (const label of byTitleBlockFirst(phrases, pageW, pageH)) {
+  for (let label of byTitleBlockFirst(phrases, pageW, pageH)) {
     if (!TITLE_LABEL_RE.test(label.text)) continue
-    const rest = label.text.replace(TITLE_LABEL_RE, '').trim()
+    let rest = label.text.replace(TITLE_LABEL_RE, '').trim()
+    if (rest && isFieldLabel(rest)) {
+      // "DRAWING TITLE: CLIENT DETAILS:" — two headings; the value is below the first.
+      label = firstPartOf(label, label.text.length - rest.length)
+      rest = ''
+    }
     if (rest) return tidyTitle(rest)
 
     const beside = phrases
@@ -184,7 +214,7 @@ function findLabelledTitle(phrases: Phrase[], pageW: number, pageH: number): str
 
     // Below: may run over several lines. Read down the column until a gap or another field.
     const column = phrases
-      .filter((p) => p !== label && below(label, p, label.size * 12))
+      .filter((p) => p !== label && below(label, p, Math.max(label.size * 12, MIN_VALUE_DROP * 2)))
       .sort((a, b) => a.y - b.y)
     const lines: Phrase[] = []
     for (const p of column) {
@@ -192,7 +222,7 @@ function findLabelledTitle(phrases: Phrase[], pageW: number, pageH: number): str
       const prev = lines[lines.length - 1] ?? label
       const gap = p.y - prev.y
       if (lines.length > 0 && gap > Math.max(prev.size, p.size) * 2.2) break
-      if (lines.length === 0 && gap > label.size * 6) break
+      if (lines.length === 0 && gap > Math.max(label.size * 6, MIN_VALUE_DROP)) break
       lines.push(p)
       if (lines.length === 4) break
     }
