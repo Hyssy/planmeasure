@@ -1,0 +1,91 @@
+# PlanMeasure — Project Brief for Claude Code
+
+## Who I am
+I'm Jordan, not a developer. I build this app with Claude Code. When you work on this project:
+- Explain what you're about to do in plain English before larger changes.
+- Work in small steps. Finish one phase, get it working, then stop and tell me how to test it.
+- Tell me the exact commands to run (e.g. `npm run dev`) and what I should see.
+- Commit to git after each working step with a clear message.
+- If something is ambiguous, ask me. Don't guess on measurement maths.
+
+## What the app does
+A browser-based PDF takeoff and markup tool for construction plans (architectural, structural, fit-out). Users:
+1. Load a plan set (one multi-page PDF or several PDFs).
+2. The app reads each sheet, **detects the drawing scale** if one is printed, and **labels each sheet** (sheet number and title from the title block).
+3. Users do **takeoffs**: linear, area, perimeter, count, grouped by trade/item.
+4. Users add **markups**: clouds, arrows, text, rectangles, highlights.
+5. Users export quantities (CSV/Excel) and a marked-up PDF.
+
+## Core principle: everything runs in the browser
+- PDFs are **never uploaded to a server**. They're processed locally with pdf.js.
+- Projects are saved in the browser (IndexedDB), with export/import as a `.json` project file so work can be shared or backed up.
+- No backend, no database, no accounts. The site is static files.
+
+## Tech stack (keep it to this unless we agree to change)
+- **Vite + React + TypeScript**
+- **pdfjs-dist** — render pages and extract text (for scale and sheet detection)
+- **react-konva** (Konva) — drawing layer on top of the PDF for measurements and markups
+- **Zustand** — app state
+- **Dexie** (IndexedDB) — local project storage
+- **pdf-lib** — export marked-up PDF
+- **SheetJS (xlsx)** — export quantities to Excel
+- **Tailwind CSS** — styling
+- Optional, later: **tesseract.js** for OCR on scanned plans with no text layer
+
+## Measurement rules (important — accuracy matters)
+- PDF units are points: 1 pt = 1/72 inch = 0.352778 mm.
+- Store all geometry in **PDF page coordinates** (points), not screen pixels, so zoom never affects measurements.
+- Each page has a scale: `realMmPerPdfPt`. For a drawing at 1:100 printed at its intended sheet size: `0.352778 × 100`.
+- **Scale detection** reads the text layer for patterns like `1:100`, `SCALE 1:50`, `1:100 @ A1`, `1:200 @ A3`.
+  - If the scale says `@ A1` but the PDF page is A3, adjust for the size difference.
+  - If multiple scales appear on one sheet (several viewports), flag it and let the user choose, or set a scale per region.
+  - Detected scale is a **suggestion**. Show it clearly as "Detected — please verify".
+- **Calibrate tool**: user clicks two points on a known dimension and types the real length. This always overrides detection.
+- Show a warning badge on any sheet with no confirmed scale. Block takeoffs on unscaled sheets, or mark them clearly.
+- Display units: mm, m, m² (Australian metric). Round sensibly (lengths 2 dp in m, areas 2 dp in m²).
+- Write unit tests for the scale maths and the area/length calculations.
+
+## Sheet labelling
+- Extract the sheet number (e.g. `A-101`, `DA02`, `S-200`) and title from text, focusing on the bottom-right title block area first.
+- Show a sheet list in a sidebar with thumbnails, number, title, and scale status.
+- Users can edit any label. Edits are saved.
+
+## Takeoff features
+- Tools: **Linear** (polyline), **Area** (polygon, with optional cut-outs/deductions), **Perimeter**, **Count** (click markers).
+- Quantities are grouped by **Item** (e.g. "Internal wall – plasterboard", "Floor tiles"), with a name, colour, unit, and optional trade/category.
+- Running totals per item, per sheet, and for the whole project.
+- Select, move, edit vertices, delete, undo/redo.
+- Export: CSV and Excel (item, sheet, quantity, unit).
+
+## Markup features
+- Revision cloud, rectangle, ellipse, arrow, line, freehand, text box, highlight.
+- Colour and line weight picker.
+- Layers: Takeoff and Markup can be shown or hidden separately.
+- Export a flattened marked-up PDF with pdf-lib.
+
+## UI layout
+- Left: sheet list (thumbnails + labels + scale status).
+- Centre: plan viewer with smooth zoom and pan (mouse wheel and trackpad).
+- Top: tool bar (Select, Pan, Calibrate, Linear, Area, Count, Markup tools).
+- Right: Items/quantities panel.
+- Keyboard shortcuts: Esc cancels, Enter finishes a shape, Ctrl+Z / Ctrl+Y undo/redo, Space+drag pans.
+
+## Build plan (do one phase at a time)
+1. **Setup + viewer**: scaffold the project, load PDFs, render pages, zoom/pan, sheet thumbnails.
+2. **Scale**: calibrate tool first, then automatic scale detection from text, with "verify" status.
+3. **Sheet labelling**: auto-detect sheet number/title, editable sheet list.
+4. **Takeoff**: linear, area, count with items and a totals panel. Unit tests for the maths.
+5. **Save/load**: IndexedDB autosave, project export/import (.json).
+6. **Markup**: markup tools + markup layer.
+7. **Exports**: CSV/Excel quantities, marked-up PDF.
+8. **Deploy**: Cloudflare Pages from the GitHub repo.
+9. **Nice-to-haves**: OCR for scanned sets, compare two revisions, print-ready quantity report.
+
+## Hosting
+- Code lives in a **private GitHub repo**.
+- Deployed with **Cloudflare Pages** connected to the repo (build command `npm run build`, output folder `dist`).
+- Optionally protect the site with **Cloudflare Access** so only company email addresses can open it.
+
+## Testing
+- Keep a `test-plans/` folder (git-ignored) with real sample PDFs for manual testing.
+- Before finishing any phase, check: a known dimension on a test plan measures correctly within 0.5%.
