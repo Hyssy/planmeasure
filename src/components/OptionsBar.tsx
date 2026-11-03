@@ -1,7 +1,7 @@
 import { MARKUP_COLOURS, MARKUP_LABEL, MARKUP_TYPES, MARKUP_WIDTHS, TEXT_SIZES, type Markup } from '../lib/markup'
-import { KIND_LABEL } from '../lib/takeoff'
+import { itemForSheet, KIND_LABEL } from '../lib/takeoff'
 import { AREA_COLOURS, FIELD_LABEL, LABEL_FIELDS } from '../lib/labelAreas'
-import { DRAW_STYLES, isTakeoffTool, useApp, type DrawStyle } from '../store'
+import { DRAW_STYLES, isTakeoffTool, sheetName, useApp, type DrawStyle } from '../store'
 
 const STYLE_LABEL: Record<DrawStyle, { label: string; linear?: string; key: string }> = {
   polygon: { label: 'Polygon', linear: 'Lines', key: '1' },
@@ -15,6 +15,11 @@ export default function OptionsBar() {
   const drawStyles = useApp((s) => s.drawStyles)
   const setDrawStyle = useApp((s) => s.setDrawStyle)
   const activeItem = useApp((s) => s.items.find((i) => i.id === s.activeItemId))
+  const items = useApp((s) => s.items)
+  const sheetId = useApp((s) => s.selectedSheetId)
+  const itemsPerSheet = useApp((s) => s.itemsPerSheet)
+  const labels = useApp((s) => s.labels)
+  const sheets = useApp((s) => s.sheets)
 
   const markupOptions = useApp((s) => s.markupOptions)
   const setMarkupOptions = useApp((s) => s.setMarkupOptions)
@@ -63,7 +68,10 @@ export default function OptionsBar() {
   }
 
   if (!isTakeoffTool(tool)) return null
-  const item = activeItem?.kind === tool ? activeItem : undefined
+  const active = activeItem?.kind === tool ? activeItem : undefined
+  // With per-sheet items, show which sheet's item the next shape goes into.
+  const target = active && sheetId ? itemForSheet(items, active, sheetId, itemsPerSheet) : undefined
+  const item = target?.item ?? active
 
   return (
     <div className="flex h-9 shrink-0 items-center gap-3 border-b border-neutral-300 bg-neutral-50 px-3 text-sm" data-testid="options-bar">
@@ -74,6 +82,8 @@ export default function OptionsBar() {
           <>
             <span className="h-3 w-3 rounded-sm" style={{ background: item.colour }} />
             <span className="font-medium text-neutral-900">{item.name}</span>
+            {item.sheetId && <span className="text-neutral-500">· {sheetName(labels[item.sheetId], sheets.findIndex((sh) => sh.id === item.sheetId))}</span>}
+            {target?.isNew && <span className="text-neutral-500" data-testid="new-sheet-item">(new for this sheet)</span>}
           </>
         ) : (
           <span className="italic">a new item</span>

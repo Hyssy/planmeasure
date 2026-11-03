@@ -59,6 +59,8 @@ A browser-based PDF takeoff and markup tool for construction plans (architectura
 - Tools: **Linear** (polyline), **Area** (polygon, with optional cut-outs/deductions), **Perimeter**, **Count** (click markers).
 - Drawing styles (added by Jordan): Area and Perimeter can be drawn as **Polygon, Rectangle or Freehand**; Linear as **Lines or Freehand**. Freehand strokes are simplified with a tight tolerance so quantities stay within 0.5%.
 - Quantities are grouped by **Item** (e.g. "Internal wall – plasterboard", "Floor tiles"), with a name, colour, unit, and optional trade/category.
+- **One item per sheet** (added by Jordan, on branch `takeoff-improvements` until approved): drawing an item on another sheet starts that sheet's own item (same name, colour, type, trade) in the same **group**; the panel shows each sheet's quantity and the group total, with "Combine into one item". A project setting "New item for each sheet" (default on) turns this off. Name/colour/trade edits apply to the whole group.
+- **Opening PDFs into a project that already has plans asks first**: "Add to this project" or "Start a new project".
 - Running totals per item, per sheet, and for the whole project.
 - Select, move, edit vertices, delete, undo/redo.
 - Export: CSV and Excel (item, sheet, quantity, unit).

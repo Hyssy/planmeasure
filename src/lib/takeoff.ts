@@ -29,6 +29,73 @@ export interface Item {
   colour: string
   kind: TakeoffKind
   trade: string
+  /**
+   * Items for the same thing on different sheets share a group ("Floor tiles" on
+   * A-101 and on A-102). Missing = the item is its own group.
+   */
+  groupId?: string
+  /** The sheet this item belongs to. Missing = one item across all sheets (older projects, or per-sheet turned off). */
+  sheetId?: string
+}
+
+/** The group an item belongs to. */
+export function groupOf(item: Item): string {
+  return item.groupId ?? item.id
+}
+
+/**
+ * Which item a new shape on `sheetId` should go into.
+ *
+ * With "new item for each sheet" on, drawing with "Floor tiles" (A-101) on sheet
+ * A-102 uses the group's A-102 item — or makes one: same name, colour, type and
+ * trade, linked to the same group so their totals add together.
+ */
+export function itemForSheet(
+  items: Item[],
+  active: Item,
+  sheetId: string,
+  perSheet: boolean,
+): { item: Item; isNew: boolean } {
+  if (!perSheet || active.sheetId === sheetId) return { item: active, isNew: false }
+  const group = groupOf(active)
+  const existing = items.find((i) => groupOf(i) === group && i.sheetId === sheetId)
+  if (existing) return { item: existing, isNew: false }
+  return {
+    item: { ...active, id: '', groupId: group, sheetId },
+    isNew: true,
+  }
+}
+
+export interface ItemGroup {
+  id: string
+  /** items in the group, in list order */
+  items: Item[]
+}
+
+/** Items gathered into their groups, in the order each group first appears. */
+export function groupItems(items: Item[]): ItemGroup[] {
+  const groups = new Map<string, ItemGroup>()
+  for (const item of items) {
+    const g = groupOf(item)
+    let group = groups.get(g)
+    if (!group) {
+      group = { id: g, items: [] }
+      groups.set(g, group)
+    }
+    group.items.push(item)
+  }
+  return [...groups.values()]
+}
+
+/** Combined totals for a group: its items added together. */
+export function groupTotal(group: ItemGroup, takeoffs: Takeoff[], scales: Record<string, SheetScaleInfo | undefined>) {
+  const parts = group.items.map((item) => ({ item, total: itemTotal(item, takeoffs, scales) }))
+  return {
+    parts,
+    total: parts.reduce((s, p) => s + p.total.total, 0),
+    unscaled: parts.reduce((s, p) => s + p.total.unscaled, 0),
+    unverified: parts.reduce((s, p) => s + p.total.unverified, 0),
+  }
 }
 
 export interface Takeoff {

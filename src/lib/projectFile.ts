@@ -38,6 +38,8 @@ export interface ProjectData {
   markups?: Markup[]
   /** taught title-block areas (fractions of the page) */
   labelAreas?: Record<string, { x0: number; y0: number; x1: number; y1: number }>
+  /** project settings (added later — older files have none) */
+  settings?: { itemsPerSheet?: boolean }
   selectedSheetId: string | null
 }
 

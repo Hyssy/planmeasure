@@ -133,3 +133,53 @@ describe('drawing styles', () => {
     expect(simplifyPath(line, 0.1)).toEqual([line[0], line[49]])
   })
 })
+
+describe('one item per sheet, added together', () => {
+  const tiles = { id: 'i1', name: 'Floor tiles', colour: '#e6194b', kind: 'area' as const, trade: 'Tiling', groupId: 'i1', sheetId: 's1' }
+
+  it('keeps using the item on its own sheet', async () => {
+    const { itemForSheet } = await import('./takeoff')
+    expect(itemForSheet([tiles], tiles, 's1', true)).toEqual({ item: tiles, isNew: false })
+  })
+
+  it('on another sheet, makes a matching item in the same group', async () => {
+    const { itemForSheet } = await import('./takeoff')
+    const r = itemForSheet([tiles], tiles, 's2', true)
+    expect(r.isNew).toBe(true)
+    expect(r.item).toMatchObject({ name: 'Floor tiles', colour: '#e6194b', kind: 'area', trade: 'Tiling', groupId: 'i1', sheetId: 's2' })
+  })
+
+  it('reuses the group’s item for that sheet if there is one', async () => {
+    const { itemForSheet } = await import('./takeoff')
+    const s2 = { ...tiles, id: 'i2', sheetId: 's2' }
+    expect(itemForSheet([tiles, s2], tiles, 's2', true)).toEqual({ item: s2, isNew: false })
+    // and from the A-102 item back to A-101
+    expect(itemForSheet([tiles, s2], s2, 's1', true)).toEqual({ item: tiles, isNew: false })
+  })
+
+  it('with per-sheet off, one item covers every sheet', async () => {
+    const { itemForSheet } = await import('./takeoff')
+    expect(itemForSheet([tiles], tiles, 's2', false)).toEqual({ item: tiles, isNew: false })
+  })
+
+  it('older items (no sheet) start a group when used per sheet', async () => {
+    const { itemForSheet } = await import('./takeoff')
+    const old = { id: 'o1', name: 'Walls', colour: '#000', kind: 'linear' as const, trade: '' }
+    expect(itemForSheet([old], old, 's3', true).item).toMatchObject({ groupId: 'o1', sheetId: 's3' })
+  })
+
+  it('group totals add the sheets together', async () => {
+    const { groupItems, groupTotal } = await import('./takeoff')
+    const s2 = { ...tiles, id: 'i2', sheetId: 's2' }
+    const other = { id: 'x', name: 'Walls', colour: '#000', kind: 'linear' as const, trade: '' }
+    const groups = groupItems([tiles, other, s2])
+    expect(groups.map((g) => g.items.map((i) => i.id))).toEqual([['i1', 'i2'], ['x']])
+    const sq = (id: string, itemId: string, sheetId: string, w: number) => ({ id, itemId, sheetId, points: [m(0, 0), m(w, 0), m(w, 10), m(0, 10)], holes: [] })
+    const takeoffs = [sq('a', 'i1', 's1', 10), sq('b', 'i2', 's2', 5), sq('c', 'i2', 's2', 2)]
+    const scales = { s1: { realMmPerPt: k100, state: 'confirmed' as const }, s2: { realMmPerPt: k100, state: 'unverified' as const } }
+    const t = groupTotal(groups[0], takeoffs, scales)
+    expect(t.total).toBeCloseTo(100 + 50 + 20, 9)
+    expect(t.parts.map((p) => Number(p.total.total.toFixed(2)))).toEqual([100, 70])
+    expect(t.unverified).toBe(2)
+  })
+})

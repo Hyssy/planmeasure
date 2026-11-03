@@ -2,6 +2,10 @@ import { useMemo, useState } from 'react'
 import { usePanels } from '../panels'
 import CollapsedRail, { CollapseButton } from './CollapsedRail'
 import {
+  groupItems,
+  groupOf,
+  groupTotal,
+  type ItemGroup,
   formatQuantity,
   grossAreaM2,
   netAreaM2,
@@ -31,6 +35,8 @@ export default function ItemsPanel() {
   const labels = useApp((s) => s.labels)
   const selectedSheetId = useApp((s) => s.selectedSheetId)
   const activeItemId = useApp((s) => s.activeItemId)
+  const itemsPerSheet = useApp((s) => s.itemsPerSheet)
+  const setItemsPerSheet = useApp((s) => s.setItemsPerSheet)
   const [scope, setScope] = useState<Scope>('project')
   const [adding, setAdding] = useState(false)
 
@@ -77,6 +83,13 @@ export default function ItemsPanel() {
           </button>
         ))}
       </div>
+      <label
+        className="flex items-center gap-2 border-b border-neutral-200 px-3 py-1.5 text-xs text-neutral-600"
+        title="On: drawing an item on another sheet starts that sheet's own item, grouped with the others so their totals add together. Off: one item collects shapes from every sheet."
+      >
+        <input type="checkbox" checked={itemsPerSheet} onChange={(e) => setItemsPerSheet(e.target.checked)} data-testid="items-per-sheet" />
+        New item for each sheet (totals added together)
+      </label>
 
       <div className="flex-1 overflow-y-auto">
         {items.length === 0 ? (
@@ -86,16 +99,35 @@ export default function ItemsPanel() {
           </p>
         ) : (
           <ul data-testid="items">
-            {items.map((item) => (
-              <ItemRow
-                key={item.id}
-                item={item}
-                active={item.id === activeItemId}
-                total={itemTotal(item, inScope, scaleInfos)}
-                showSheets={scope === 'project'}
-                sheetLabel={sheetLabel}
-              />
-            ))}
+            {groupItems(items).map((group) => {
+              // "This sheet": just the part of each group on this sheet
+              const shown =
+                scope === 'sheet'
+                  ? group.items.filter((i) => i.sheetId === selectedSheetId || (!i.sheetId && inScope.some((t) => t.itemId === i.id)))
+                  : group.items
+              if (!shown.length) return null
+              if (shown.length === 1) {
+                return (
+                  <ItemRow
+                    key={group.id}
+                    item={shown[0]}
+                    active={shown[0].id === activeItemId}
+                    total={itemTotal(shown[0], inScope, scaleInfos)}
+                    showSheets={scope === 'project' && !shown[0].sheetId}
+                    sheetLabel={sheetLabel}
+                  />
+                )
+              }
+              return (
+                <GroupRow
+                  key={group.id}
+                  group={{ ...group, items: shown }}
+                  activeItemId={activeItemId}
+                  totals={groupTotal({ ...group, items: shown }, inScope, scaleInfos)}
+                  sheetLabel={sheetLabel}
+                />
+              )
+            })}
           </ul>
         )}
       </div>
@@ -133,6 +165,7 @@ function ItemRow(props: {
           <div className="text-xs text-neutral-500">
             {KIND_LABEL[item.kind]}
             {item.trade && ` · ${item.trade}`}
+            {item.sheetId && <span data-testid="item-sheet"> · {sheetLabel(item.sheetId)}</span>}
           </div>
         </button>
         <div className="text-right">
@@ -253,10 +286,14 @@ function NewItemForm({ onDone }: { onDone: () => void }) {
   )
 }
 
-function EditItemForm({ item, onDone }: { item: Item; onDone: () => void }) {
+function EditItemForm({ item, onDone, wholeGroup }: { item: Item; onDone: () => void; wholeGroup?: boolean }) {
   const updateItem = useApp((s) => s.updateItem)
-  const deleteItem = useApp((s) => s.deleteItem)
-  const shapes = useApp((s) => s.takeoffs.filter((t) => t.itemId === item.id).length)
+  const deleteItemOne = useApp((s) => s.deleteItem)
+  const deleteGroup = useApp((s) => s.deleteGroup)
+  const deleteItem = (id: string) => (wholeGroup ? deleteGroup(groupOf(item)) : deleteItemOne(id))
+  const shapes = useApp((s) =>
+    s.takeoffs.filter((t) => (wholeGroup ? s.items.some((i) => i.id === t.itemId && groupOf(i) === groupOf(item)) : t.itemId === item.id)).length,
+  )
   const [name, setName] = useState(item.name)
   const [trade, setTrade] = useState(item.trade)
   const [colour, setColour] = useState(item.colour)
@@ -388,7 +425,7 @@ function SelectedShape({ scaleInfos }: { scaleInfos: Record<string, SheetScaleIn
           className="mt-0.5 block w-full rounded border border-neutral-300 bg-white px-1.5 py-1 text-sm"
         >
           {items
-            .filter((i) => i.kind === item.kind)
+            .filter((i) => i.kind === item.kind && (!i.sheetId || i.sheetId === takeoff.sheetId))
             .map((i) => (
               <option key={i.id} value={i.id}>
                 {i.name}
@@ -453,5 +490,111 @@ function AreaBreakdown(props: {
         {drawing ? 'Drawing cut-out… (Esc to stop)' : '+ Add cut-out'}
       </button>
     </div>
+  )
+}
+
+/** An item measured on several sheets: one row per sheet, with the sheets added together. */
+function GroupRow(props: {
+  group: ItemGroup
+  activeItemId: string | null
+  totals: ReturnType<typeof groupTotal>
+  sheetLabel: (id: string) => string
+}) {
+  const { group, activeItemId, totals, sheetLabel } = props
+  const first = group.items[0]
+  const activateItem = useApp((s) => s.activateItem)
+  const selectSheet = useApp((s) => s.selectSheet)
+  const selectedSheetId = useApp((s) => s.selectedSheetId)
+  const deleteItem = useApp((s) => s.deleteItem)
+  const combineGroup = useApp((s) => s.combineGroup)
+  const takeoffs = useApp((s) => s.takeoffs)
+  const [editing, setEditing] = useState(false)
+
+  if (editing) return <EditItemForm item={first} wholeGroup onDone={() => setEditing(false)} />
+
+  const forThisSheet = group.items.find((i) => i.sheetId === selectedSheetId) ?? first
+  return (
+    <li data-testid="item-group" className="border-b border-neutral-100 px-3 py-2">
+      <div className="flex items-start gap-2">
+        <span className="mt-1 h-3 w-3 shrink-0 rounded-sm" style={{ background: first.colour }} />
+        <button className="min-w-0 flex-1 text-left" onClick={() => activateItem(forThisSheet.id)} title="Draw more of this item on this sheet">
+          <div className="truncate text-sm font-medium" data-testid="item-name">
+            {first.name}
+          </div>
+          <div className="text-xs text-neutral-500">
+            {KIND_LABEL[first.kind]}
+            {first.trade && ` · ${first.trade}`} · {group.items.length} sheets
+          </div>
+        </button>
+        <div className="text-right">
+          <div className="text-sm font-semibold tabular-nums" data-testid="item-total" title="All sheets added together">
+            {formatQuantity(totals.total, first.kind)}
+            {first.kind === 'count' && <span className="font-normal text-neutral-500"> each</span>}
+          </div>
+          <button onClick={() => setEditing(true)} className="text-xs text-neutral-500 hover:text-neutral-900">
+            Edit
+          </button>
+        </div>
+      </div>
+      <ul className="mt-1.5 ml-5 border-l border-neutral-200" data-testid="group-sheets">
+        {totals.parts.map(({ item, total }) => {
+          const shapes = takeoffs.filter((t) => t.itemId === item.id).length
+          return (
+            <li
+              key={item.id}
+              data-testid="group-sheet-row"
+              className={`flex items-center gap-2 py-0.5 pl-2 text-xs ${item.id === activeItemId ? 'bg-signal-orange-4/25' : ''}`}
+            >
+              <button
+                className="min-w-0 flex-1 truncate text-left text-neutral-700 hover:underline"
+                title="Draw more on this sheet"
+                onClick={() => {
+                  if (item.sheetId && item.sheetId !== selectedSheetId) selectSheet(item.sheetId)
+                  activateItem(item.id)
+                }}
+              >
+                {item.sheetId ? sheetLabel(item.sheetId) : 'All sheets'}
+              </button>
+              <span className="tabular-nums">
+                {total.unscaled > 0 && total.total === 0 ? (
+                  <span className="text-red-700">no scale</span>
+                ) : (
+                  <>
+                    {formatQuantity(total.total, item.kind)}
+                    {total.unverified > 0 && <span className="text-accent-text" title="unverified scale"> (unverified)</span>}
+                    {total.unscaled > 0 && <span className="text-red-700"> + {total.unscaled} unscaled</span>}
+                  </>
+                )}
+              </span>
+              <button
+                className="text-neutral-400 hover:text-red-700"
+                title="Remove this sheet’s item"
+                aria-label={`Remove ${item.sheetId ? sheetLabel(item.sheetId) : 'this'} from ${item.name}`}
+                onClick={() => {
+                  if (shapes === 0 || confirm(`Remove “${item.name}” on ${item.sheetId ? sheetLabel(item.sheetId) : 'all sheets'} and its ${shapes} shape${shapes > 1 ? 's' : ''}? (Ctrl+Z can undo.)`)) {
+                    deleteItem(item.id)
+                  }
+                }}
+              >
+                ×
+              </button>
+            </li>
+          )
+        })}
+      </ul>
+      {(totals.unscaled > 0 || totals.unverified > 0) && (
+        <div className="mt-1 space-y-0.5 text-xs" data-testid="item-warnings">
+          {totals.unscaled > 0 && <div className="text-red-700">{totals.unscaled} shape{totals.unscaled > 1 ? 's' : ''} on unscaled sheets not counted</div>}
+          {totals.unverified > 0 && <div className="text-accent-text">includes {totals.unverified} shape{totals.unverified > 1 ? 's' : ''} on an unverified scale</div>}
+        </div>
+      )}
+      <button
+        onClick={() => combineGroup(group.id)}
+        className="mt-1 text-xs text-accent-text hover:underline"
+        title="Merge these sheets into a single item (Ctrl+Z can undo)"
+      >
+        Combine into one item
+      </button>
+    </li>
   )
 }

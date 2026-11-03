@@ -24,7 +24,7 @@ const TOOL_GROUPS: { id: Tool; label: string; key: string; hint: string }[][] = 
 ]
 
 export default function Toolbar() {
-  const openFiles = useApp((s) => s.openFiles)
+  const openFiles = useApp((s) => s.requestOpenFiles)
   const loading = useApp((s) => s.loading)
   const inputRef = useRef<HTMLInputElement>(null)
   const tool = useApp((s) => s.tool)
@@ -63,7 +63,7 @@ export default function Toolbar() {
         onChange={(e) => {
           const files = Array.from(e.target.files ?? [])
           e.target.value = ''
-          if (files.length) void openFiles(files)
+          if (files.length) openFiles(files)
         }}
       />
       {!slim && <div className="h-6 w-px bg-white/20" />}

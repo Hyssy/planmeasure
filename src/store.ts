@@ -25,7 +25,7 @@ import {
 } from './lib/scale'
 import { detectSheetLabel } from './lib/sheetLabel'
 import { MARKUP_COLOURS, type Markup, type MarkupType } from './lib/markup'
-import { ITEM_COLOURS, KIND_LABEL, type Item, type SheetScaleInfo, type Takeoff, type TakeoffKind } from './lib/takeoff'
+import { groupOf, ITEM_COLOURS, itemForSheet, KIND_LABEL, type Item, type SheetScaleInfo, type Takeoff, type TakeoffKind } from './lib/takeoff'
 
 
 export type Tool = 'select' | 'pan' | 'calibrate' | 'measure' | 'markup' | 'areas' | TakeoffKind
@@ -129,6 +129,11 @@ interface AppState {
   tool: Tool
 
   openFiles: (files: File[]) => Promise<void>
+  /** PDFs waiting for "add to this project or start a new one?" */
+  pendingFiles: File[] | null
+  /** Open PDFs, asking first if the project already has plans. */
+  requestOpenFiles: (files: File[]) => void
+  resolvePendingFiles: (choice: 'add' | 'new' | 'cancel') => Promise<void>
   selectSheet: (id: string) => void
   dismissErrors: () => void
   setTool: (tool: Tool) => void
@@ -144,6 +149,13 @@ interface AppState {
   setDrawStyle: (kind: StyledKind, style: DrawStyle) => void
   items: Item[]
   takeoffs: Takeoff[]
+  /** New item for each sheet (grouped so totals add together), or one item across all sheets. Saved with the project. */
+  itemsPerSheet: boolean
+  setItemsPerSheet: (on: boolean) => void
+  /** Merge a group's per-sheet items into one item. */
+  combineGroup: (groupId: string) => void
+  /** Delete every item (and shape) in a group. */
+  deleteGroup: (groupId: string) => void
   /** the item new shapes are added to */
   activeItemId: string | null
   selectedTakeoffId: string | null
@@ -263,6 +275,7 @@ function emptyProject(): Partial<AppState> {
     takeoffs: [],
     markups: [],
     labelAreas: {},
+    itemsPerSheet: true,
     areaPreview: {},
     areaApply: null,
     activeItemId: null,
@@ -290,6 +303,7 @@ export function toProjectData(s: AppState): ProjectData {
     takeoffs: s.takeoffs,
     markups: s.markups,
     labelAreas: s.labelAreas,
+    settings: { itemsPerSheet: s.itemsPerSheet },
     selectedSheetId: s.selectedSheetId,
   }
 }
@@ -329,6 +343,44 @@ export const useApp = create<AppState>((set, get) => ({
   setDrawStyle: (kind, style) => set((s) => ({ drawStyles: { ...s.drawStyles, [kind]: style } })),
   items: [],
   takeoffs: [],
+  itemsPerSheet: true,
+  setItemsPerSheet: (on) => set({ itemsPerSheet: on }),
+  combineGroup: (groupId) =>
+    set((s) => {
+      const members = s.items.filter((i) => groupOf(i) === groupId)
+      if (members.length < 2) return {}
+      const keep = members[0]
+      const others = new Set(members.slice(1).map((i) => i.id))
+      return {
+        ...record(s),
+        items: s.items.filter((i) => !others.has(i.id)).map((i) => (i.id === keep.id ? { ...i, sheetId: undefined } : i)),
+        takeoffs: s.takeoffs.map((t) => (others.has(t.itemId) ? { ...t, itemId: keep.id } : t)),
+        activeItemId: s.activeItemId && others.has(s.activeItemId) ? keep.id : s.activeItemId,
+      }
+    }),
+  deleteGroup: (groupId) =>
+    set((s) => {
+      const ids = new Set(s.items.filter((i) => groupOf(i) === groupId).map((i) => i.id))
+      return {
+        ...record(s),
+        items: s.items.filter((i) => !ids.has(i.id)),
+        takeoffs: s.takeoffs.filter((t) => !ids.has(t.itemId)),
+        activeItemId: s.activeItemId && ids.has(s.activeItemId) ? null : s.activeItemId,
+        selectedTakeoffId: s.takeoffs.some((t) => t.id === s.selectedTakeoffId && ids.has(t.itemId)) ? null : s.selectedTakeoffId,
+      }
+    }),
+  pendingFiles: null,
+  requestOpenFiles: (files) => {
+    if (get().sheets.length > 0) set({ pendingFiles: files })
+    else void get().openFiles(files)
+  },
+  resolvePendingFiles: async (choice) => {
+    const files = get().pendingFiles
+    set({ pendingFiles: null })
+    if (!files || choice === 'cancel') return
+    if (choice === 'new') get().newProject()
+    await get().openFiles(files)
+  },
   activeItemId: null,
   selectedTakeoffId: null,
   cutoutFor: null,
@@ -440,6 +492,7 @@ export const useApp = create<AppState>((set, get) => ({
         takeoffs: data.takeoffs,
         markups: data.markups ?? [],
         labelAreas: data.labelAreas ?? {},
+        itemsPerSheet: data.settings?.itemsPerSheet ?? true,
         selectedSheetId: sheets.some((sh) => sh.id === data.selectedSheetId) ? data.selectedSheetId : (sheets[0]?.id ?? null),
         restoring: false,
         loading: false,
@@ -545,6 +598,8 @@ export const useApp = create<AppState>((set, get) => ({
         name: fields.name ?? `${KIND_LABEL[kind]} ${sameKind + 1}`,
         colour: fields.colour ?? ITEM_COLOURS[s.items.length % ITEM_COLOURS.length],
         trade: fields.trade ?? '',
+        groupId: id,
+        sheetId: s.itemsPerSheet && s.selectedSheetId ? s.selectedSheetId : undefined,
       }
       return { ...record(s), items: [...s.items, item], activeItemId: id }
     })
@@ -552,7 +607,12 @@ export const useApp = create<AppState>((set, get) => ({
   },
 
   updateItem: (id, patch) =>
-    set((s) => ({ ...record(s), items: s.items.map((i) => (i.id === id ? { ...i, ...patch } : i)) })),
+    set((s) => {
+      // Name, colour and trade are shared by every sheet's item in a group.
+      const target = s.items.find((i) => i.id === id)
+      const group = target ? groupOf(target) : id
+      return { ...record(s), items: s.items.map((i) => (groupOf(i) === group ? { ...i, ...patch } : i)) }
+    }),
 
   deleteItem: (id) =>
     set((s) => ({
@@ -574,11 +634,39 @@ export const useApp = create<AppState>((set, get) => ({
     set((s) => {
       let items = s.items
       let itemId = s.activeItemId
-      if (!items.find((i) => i.id === itemId && i.kind === kind)) {
+      const active = items.find((i) => i.id === itemId && i.kind === kind)
+      if (!active) {
         // No suitable item yet: make one.
         itemId = newId('i')
         const sameKind = items.filter((i) => i.kind === kind).length
-        items = [...items, { id: itemId, kind, name: `${KIND_LABEL[kind]} ${sameKind + 1}`, colour: ITEM_COLOURS[items.length % ITEM_COLOURS.length], trade: '' }]
+        items = [
+          ...items,
+          {
+            id: itemId,
+            kind,
+            name: `${KIND_LABEL[kind]} ${sameKind + 1}`,
+            colour: ITEM_COLOURS[items.length % ITEM_COLOURS.length],
+            trade: '',
+            groupId: itemId,
+            sheetId: s.itemsPerSheet ? sheetId : undefined,
+          },
+        ]
+      } else {
+        // Drawing on another sheet: use (or make) this item's version for that sheet.
+        const target = itemForSheet(items, active, sheetId, s.itemsPerSheet)
+        if (target.isNew) {
+          const created = { ...target.item, id: newId('i') }
+          // keep the group together in the list: insert after its last member
+          const lastIndex = items.reduce((at, i, n) => (groupOf(i) === groupOf(active) ? n : at), -1)
+          items = [...items.slice(0, lastIndex + 1), created, ...items.slice(lastIndex + 1)]
+          itemId = created.id
+        } else {
+          itemId = target.item.id
+          // Per-sheet off: a sheet's item used on another sheet becomes an "all sheets" item.
+          if (!s.itemsPerSheet && active.sheetId && active.sheetId !== sheetId) {
+            items = items.map((i) => (i.id === active.id ? { ...i, sheetId: undefined } : i))
+          }
+        }
       }
       const takeoff: Takeoff = { id, itemId: itemId!, sheetId, points, holes: [] }
       return { ...record(s), items, activeItemId: itemId, takeoffs: [...s.takeoffs, takeoff] }

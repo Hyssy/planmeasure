@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react'
+import AddPlansDialog from './components/AddPlansDialog'
 import ItemsPanel from './components/ItemsPanel'
 import OptionsBar from './components/OptionsBar'
 import PlanViewer from './components/PlanViewer'
@@ -16,7 +17,7 @@ export default function App() {
   const scaleBarOpen = usePanels((s) => s.open.scaleBar)
   const sheets = useApp((s) => s.sheets)
   const selectedId = useApp((s) => s.selectedSheetId)
-  const openFiles = useApp((s) => s.openFiles)
+  const openFiles = useApp((s) => s.requestOpenFiles)
   const loading = useApp((s) => s.loading)
   const loadingMessage = useApp((s) => s.loadingMessage)
   const errors = useApp((s) => s.errors)
@@ -72,7 +73,7 @@ export default function App() {
       e.preventDefault()
       setDragOver(false)
       const files = Array.from(e.dataTransfer?.files ?? [])
-      if (files.length) void openFiles(files)
+      if (files.length) openFiles(files)
     }
     window.addEventListener('dragover', over)
     window.addEventListener('dragleave', leave)
@@ -130,6 +131,7 @@ export default function App() {
           </button>
         </div>
       )}
+      <AddPlansDialog />
     </div>
   )
 }
