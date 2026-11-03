@@ -1,5 +1,6 @@
 import { MARKUP_COLOURS, MARKUP_LABEL, MARKUP_TYPES, MARKUP_WIDTHS, TEXT_SIZES, type Markup } from '../lib/markup'
 import { KIND_LABEL } from '../lib/takeoff'
+import { AREA_COLOURS, FIELD_LABEL, LABEL_FIELDS } from '../lib/labelAreas'
 import { DRAW_STYLES, isTakeoffTool, useApp, type DrawStyle } from '../store'
 
 const STYLE_LABEL: Record<DrawStyle, { label: string; linear?: string; key: string }> = {
@@ -19,6 +20,8 @@ export default function OptionsBar() {
   const setMarkupOptions = useApp((s) => s.setMarkupOptions)
   const selectedMarkup = useApp((s) => s.markups.find((m) => m.id === s.selectedMarkupId))
   const updateMarkup = useApp((s) => s.updateMarkup)
+
+  if (tool === 'areas') return <AreasBar />
 
   if (tool === 'markup') {
     return (
@@ -177,5 +180,57 @@ function MarkupStyle(props: {
         </>
       )}
     </>
+  )
+}
+
+/** Teaching the title block: pick a field, draw its box, check what's read, apply to all. */
+function AreasBar() {
+  const areas = useApp((s) => s.labelAreas)
+  const field = useApp((s) => s.areaField)
+  const preview = useApp((s) => s.areaPreview)
+  const progress = useApp((s) => s.areaApply)
+  const sheetCount = useApp((s) => s.sheets.length)
+  const setAreaField = useApp((s) => s.setAreaField)
+  const clearLabelArea = useApp((s) => s.clearLabelArea)
+  const applyLabelAreas = useApp((s) => s.applyLabelAreas)
+  const setTool = useApp((s) => s.setTool)
+  const any = Object.keys(areas).length > 0
+  return (
+    <Bar>
+      <span className="font-medium">Title-block areas</span>
+      <span className="text-neutral-600">Box each field on one sheet:</span>
+      <div className="flex flex-wrap gap-2" role="radiogroup" aria-label="Field">
+        {LABEL_FIELDS.map((f) => (
+          <span key={f} className={`flex items-center gap-1 rounded border px-1.5 py-0.5 ${field === f ? 'border-neutral-900 bg-white' : 'border-neutral-300 bg-white'}`}>
+            <button role="radio" aria-checked={field === f} onClick={() => setAreaField(f)} className="flex items-center gap-1" data-testid={`area-field-${f}`}>
+              <span className="h-3 w-3 rounded-sm" style={{ background: AREA_COLOURS[f] }} />
+              <span className={field === f ? 'font-semibold' : ''}>{FIELD_LABEL[f]}</span>
+            </button>
+            {areas[f] && (
+              <>
+                <span className="max-w-48 truncate text-xs text-neutral-600" data-testid={`area-preview-${f}`} title={preview[f]}>
+                  {preview[f] === undefined ? '✓ set' : preview[f] === '…' ? 'reading…' : preview[f] ? `“${preview[f]}”` : 'nothing read'}
+                </span>
+                <button onClick={() => clearLabelArea(f)} className="text-xs text-neutral-400 hover:text-red-700" title="Clear this box" aria-label={`Clear ${FIELD_LABEL[f]} box`}>
+                  ×
+                </button>
+              </>
+            )}
+          </span>
+        ))}
+      </div>
+      <Divider />
+      <button
+        disabled={!any || !!progress}
+        onClick={() => void applyLabelAreas()}
+        className="rounded bg-blue-600 px-2.5 py-0.5 font-medium text-white hover:bg-blue-700 disabled:opacity-40"
+        data-testid="apply-areas"
+      >
+        {progress ? `Reading ${progress.done} of ${progress.total}…` : `Apply to all ${sheetCount} sheets`}
+      </button>
+      <button onClick={() => setTool('select')} className="rounded border border-neutral-300 bg-white px-2 py-0.5 hover:bg-neutral-100">
+        Done
+      </button>
+    </Bar>
   )
 }

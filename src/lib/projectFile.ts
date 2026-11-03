@@ -36,6 +36,8 @@ export interface ProjectData {
   takeoffs: Takeoff[]
   /** added after the first release — older files have none */
   markups?: Markup[]
+  /** taught title-block areas (fractions of the page) */
+  labelAreas?: Record<string, { x0: number; y0: number; x1: number; y1: number }>
   selectedSheetId: string | null
 }
 

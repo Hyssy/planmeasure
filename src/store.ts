@@ -1,5 +1,6 @@
 import { create } from 'zustand'
-import { needsOcr, ocrSheetText } from './lib/ocr'
+import { areaInPoints, readNumber, readScales, readTitle, textInArea, type LabelAreas, type LabelField, type AreaRect } from './lib/labelAreas'
+import { needsOcr, ocrArea, ocrSheetText } from './lib/ocr'
 import * as db from './lib/db'
 import { closeAllDocuments, getPageText, loadPdfBytes, newFileId, renderThumbnail, type PageText, type SheetMeta } from './lib/pdf'
 import {
@@ -27,7 +28,7 @@ import { MARKUP_COLOURS, type Markup, type MarkupType } from './lib/markup'
 import { ITEM_COLOURS, KIND_LABEL, type Item, type SheetScaleInfo, type Takeoff, type TakeoffKind } from './lib/takeoff'
 
 
-export type Tool = 'select' | 'pan' | 'calibrate' | 'measure' | 'markup' | TakeoffKind
+export type Tool = 'select' | 'pan' | 'calibrate' | 'measure' | 'markup' | 'areas' | TakeoffKind
 
 export const TAKEOFF_TOOLS: TakeoffKind[] = ['linear', 'area', 'perimeter', 'count']
 
@@ -79,6 +80,8 @@ export interface ScaleDetection {
    * = in progress; 'done' = results came from OCR; 'failed' = OCR didn't work.
    */
   ocr: 'none' | 'pending' | 'running' | 'done' | 'failed'
+  /** scale came from a taught title-block area */
+  fromArea?: boolean
 }
 
 /** A sheet's number and title — detected, then editable. Empty string = unknown. */
@@ -89,6 +92,8 @@ export interface SheetLabel {
   edited: boolean
   /** true if read by OCR (less reliable — worth checking) */
   fromOcr?: boolean
+  /** true if read from the title-block areas the user taught (background scans leave it alone) */
+  fromArea?: boolean
 }
 
 /** "A-101", or "Sheet 3" when no number is known. */
@@ -176,6 +181,20 @@ interface AppState {
   deleteMarkup: (id: string) => void
   selectMarkup: (id: string | null) => void
 
+  // ---- Taught title-block areas ----
+  labelAreas: LabelAreas
+  /** which field the next box is for, while teaching */
+  areaField: LabelField
+  /** what each area reads on the sheet being taught (for checking) */
+  areaPreview: Partial<Record<LabelField, string>>
+  /** progress while applying areas to the set */
+  areaApply: { done: number; total: number } | null
+  setAreaField: (field: LabelField) => void
+  setLabelArea: (field: LabelField, rect: AreaRect) => Promise<void>
+  clearLabelArea: (field: LabelField) => void
+  /** Read the taught areas on these sheets (default: all) and update their labels and scales. */
+  applyLabelAreas: (sheetIds?: string[]) => Promise<number>
+
   // ---- Layers ----
   showTakeoffs: boolean
   showMarkups: boolean
@@ -213,7 +232,12 @@ function applyTextResults(
   const label: SheetLabel = { number: guess.number ?? '', title: guess.title ?? '', edited: false, fromOcr }
 
   const detections = { ...s.detections, [sheet.id]: { done: true, candidates, mismatched, ocr } }
-  const labels = s.labels[sheet.id]?.edited ? s.labels : { ...s.labels, [sheet.id]: label }
+  const keepLabel = s.labels[sheet.id]?.edited || s.labels[sheet.id]?.fromArea
+  const labels = keepLabel ? s.labels : { ...s.labels, [sheet.id]: label }
+  if (s.detections[sheet.id]?.fromArea) {
+    // the scale was read from a taught area: keep that
+    return { labels, detections: { ...s.detections, [sheet.id]: { ...s.detections[sheet.id]!, done: true, ocr } } }
+  }
   // Exactly one scale found, and it suits this page size → suggest it (still needs verifying).
   if (candidates.length === 1 && mismatched.length === 0 && !s.scales[sheet.id]) {
     const scale: SheetScale = { ...ratioScale(candidates[0]), status: 'detected', source: 'detected' }
@@ -238,6 +262,9 @@ function emptyProject(): Partial<AppState> {
     items: [],
     takeoffs: [],
     markups: [],
+    labelAreas: {},
+    areaPreview: {},
+    areaApply: null,
     activeItemId: null,
     selectedTakeoffId: null,
     selectedMarkupId: null,
@@ -262,6 +289,7 @@ export function toProjectData(s: AppState): ProjectData {
     items: s.items,
     takeoffs: s.takeoffs,
     markups: s.markups,
+    labelAreas: s.labelAreas,
     selectedSheetId: s.selectedSheetId,
   }
 }
@@ -364,6 +392,9 @@ export const useApp = create<AppState>((set, get) => ({
     }
     set({ loading: false })
     await processSheets(added, added)
+    if (gen === generation && Object.keys(get().labelAreas).length && added.length) {
+      await get().applyLabelAreas(added.map((a) => a.id))
+    }
   },
 
   newProject: () => {
@@ -408,6 +439,7 @@ export const useApp = create<AppState>((set, get) => ({
         items: data.items,
         takeoffs: data.takeoffs,
         markups: data.markups ?? [],
+        labelAreas: data.labelAreas ?? {},
         selectedSheetId: sheets.some((sh) => sh.id === data.selectedSheetId) ? data.selectedSheetId : (sheets[0]?.id ?? null),
         restoring: false,
         loading: false,
@@ -626,6 +658,92 @@ export const useApp = create<AppState>((set, get) => ({
     })),
   selectMarkup: (id) => set({ selectedMarkupId: id, selectedTakeoffId: id ? null : get().selectedTakeoffId, cutoutFor: null }),
 
+  labelAreas: {},
+  areaField: 'number',
+  areaPreview: {},
+  areaApply: null,
+  setAreaField: (field) => set({ areaField: field }),
+  setLabelArea: async (field, rect) => {
+    set((s) => ({ labelAreas: { ...s.labelAreas, [field]: rect } }))
+    // Show what it reads on the sheet being taught, then move on to the next field.
+    const st = get()
+    const sheet = st.sheets.find((sh) => sh.id === st.selectedSheetId)
+    const next: LabelField | undefined = ({ number: 'title', title: 'scale', scale: undefined } as const)[field]
+    if (next && !st.labelAreas[next]) set({ areaField: next })
+    if (!sheet) return
+    set((s) => ({ areaPreview: { ...s.areaPreview, [field]: '…' } }))
+    try {
+      const read = await readLabelAreas(sheet, { [field]: rect })
+      const text =
+        field === 'number' ? read.number : field === 'title' ? read.title : read.scales?.map(describeCandidate).join(', ')
+      set((s) => ({ areaPreview: { ...s.areaPreview, [field]: text || '' } }))
+    } catch (err) {
+      console.error('Reading area failed', err)
+      set((s) => ({ areaPreview: { ...s.areaPreview, [field]: '' } }))
+    }
+  },
+  clearLabelArea: (field) =>
+    set((s) => {
+      const labelAreas = { ...s.labelAreas }
+      delete labelAreas[field]
+      const areaPreview = { ...s.areaPreview }
+      delete areaPreview[field]
+      return { labelAreas, areaPreview, areaField: field }
+    }),
+  applyLabelAreas: async (sheetIds) => {
+    const areas = get().labelAreas
+    if (!Object.keys(areas).length) return 0
+    const gen = generation
+    const targets = get().sheets.filter((sh) => !sheetIds || sheetIds.includes(sh.id))
+    set({ areaApply: { done: 0, total: targets.length } })
+    let changed = 0
+    for (const [i, sheet] of targets.entries()) {
+      try {
+        const read = await readLabelAreas(sheet, areas)
+        if (gen !== generation) return changed
+        set((s) => {
+          const out: Partial<AppState> = { areaApply: { done: i + 1, total: targets.length } }
+          const old = s.labels[sheet.id]
+          if (!old?.edited && (read.number || read.title)) {
+            out.labels = {
+              ...s.labels,
+              [sheet.id]: {
+                number: read.number || old?.number || '',
+                title: read.title || old?.title || '',
+                edited: false,
+                fromOcr: read.ocr,
+                fromArea: true,
+              },
+            }
+            changed++
+          }
+          if (read.scales && s.scales[sheet.id]?.status !== 'confirmed') {
+            const fits = (c: ScaleCandidate) => scaleSuitsPage(c, sheet.widthPt, sheet.heightPt)
+            const candidates = read.scales.filter(fits)
+            const mismatched = read.scales.filter((c) => !fits(c))
+            if (candidates.length || mismatched.length) {
+              const prev = s.detections[sheet.id]
+              out.detections = { ...s.detections, [sheet.id]: { done: true, ocr: prev?.ocr ?? 'none', candidates, mismatched, fromArea: true } }
+              const scales = { ...s.scales }
+              if (candidates.length === 1 && !mismatched.length) {
+                scales[sheet.id] = { ...ratioScale(candidates[0]), status: 'detected', source: 'detected' }
+              } else {
+                delete scales[sheet.id] // several, or resized: the user chooses or calibrates
+              }
+              out.scales = scales
+            }
+          }
+          return out
+        })
+      } catch (err) {
+        console.error('Reading areas failed', sheet.id, err)
+        set({ areaApply: { done: i + 1, total: targets.length } })
+      }
+    }
+    set({ areaApply: null })
+    return changed
+  },
+
   showTakeoffs: true,
   showMarkups: true,
   setLayerVisible: (layer, visible) =>
@@ -688,4 +806,25 @@ async function processSheets(sheets: SheetMeta[], needText: SheetMeta[]): Promis
       if (gen === generation) set((s) => withOcrStatus(s, sheet.id, 'failed'))
     }
   }
+}
+
+/**
+ * Read the taught areas on one sheet: from its text layer if it has one,
+ * otherwise with OCR of just those boxes.
+ */
+async function readLabelAreas(
+  sheet: SheetMeta,
+  areas: LabelAreas,
+): Promise<{ number?: string; title?: string; scales?: ScaleCandidate[]; ocr: boolean }> {
+  const page = await getPageText(sheet)
+  const ocr = needsOcr(page)
+  const out: { number?: string; title?: string; scales?: ScaleCandidate[]; ocr: boolean } = { ocr }
+  for (const [field, rect] of Object.entries(areas) as [LabelField, AreaRect][]) {
+    const items = ocr ? await ocrArea(sheet, areaInPoints(rect, sheet.widthPt, sheet.heightPt)) : page.items
+    const lines = textInArea(items, rect, sheet.widthPt, sheet.heightPt)
+    if (field === 'number') out.number = readNumber(lines)
+    else if (field === 'title') out.title = readTitle(lines)
+    else out.scales = readScales(lines)
+  }
+  return out
 }

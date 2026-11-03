@@ -6,6 +6,9 @@ import { sheetName, useApp, type SheetLabel, type SheetScale } from '../store'
 export default function SheetList() {
   const sheets = useApp((s) => s.sheets)
   const labels = useApp((s) => s.labels)
+  const labelAreas = useApp((s) => s.labelAreas)
+  const tool = useApp((s) => s.tool)
+  const setTool = useApp((s) => s.setTool)
   const [query, setQuery] = useState('')
 
   const q = query.trim().toLowerCase()
@@ -21,6 +24,17 @@ export default function SheetList() {
       <div className="border-b border-neutral-200 px-3 py-2 text-xs font-semibold tracking-wide text-neutral-500 uppercase">
         Sheets {sheets.length > 0 && <span className="font-normal">({sheets.length})</span>}
       </div>
+      {sheets.length > 0 && (
+        <div className="border-b border-neutral-200 px-2 py-1.5">
+          <button
+            onClick={() => setTool('areas')}
+            className={`w-full rounded border px-2 py-1 text-left text-xs ${tool === 'areas' ? 'border-neutral-900 bg-neutral-100 font-medium' : 'border-neutral-300 hover:bg-neutral-50'}`}
+            title="Show the app where the sheet number, title and scale are on one sheet, then read that spot on every sheet"
+          >
+            {Object.keys(labelAreas).length ? '✓ Title-block areas set · change' : 'Names not found? Set title-block areas'}
+          </button>
+        </div>
+      )}
       {sheets.length > 1 && (
         <div className="border-b border-neutral-200 p-2">
           <input
@@ -101,6 +115,9 @@ function SheetItem({ sheet, index }: { sheet: SheetMeta; index: number }) {
             </div>
             {label?.fromOcr && !label.edited && (label.number || label.title) && (
               <div className="text-[11px] text-amber-800">Read by OCR — please check</div>
+            )}
+            {label?.fromArea && !label.fromOcr && !label.edited && (
+              <div className="text-[11px] text-neutral-500">From title-block areas</div>
             )}
           </button>
           <button

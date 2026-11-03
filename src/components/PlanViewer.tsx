@@ -8,6 +8,8 @@ import { formatQuantity, ITEM_COLOURS, KIND_LABEL, takeoffQuantity, type Takeoff
 import { isTakeoffTool, scaleInfo, useApp, type DrawStyle } from '../store'
 import TakeoffLayer, { type TakeoffDraft } from './TakeoffLayer'
 import MarkupLayer from './MarkupLayer'
+import AreaBoxes from './AreaBoxes'
+import { areaFromPoints, FIELD_LABEL } from '../lib/labelAreas'
 import { measureScreenText } from '../lib/measureText'
 import { markupHandles, markupPrimitives, type Markup, type MarkupType } from '../lib/markup'
 import CalibrateDialog from './CalibrateDialog'
@@ -216,6 +218,9 @@ export default function PlanViewer({ sheet }: Props) {
   const deleteMarkup = useApp((s) => s.deleteMarkup)
   const selectMarkup = useApp((s) => s.selectMarkup)
   const showTakeoffs = useApp((s) => s.showTakeoffs)
+  const labelAreas = useApp((s) => s.labelAreas)
+  const areaField = useApp((s) => s.areaField)
+  const setLabelArea = useApp((s) => s.setLabelArea)
   const showMarkups = useApp((s) => s.showMarkups)
   const markups = useMemo(() => allMarkups.filter((m) => m.sheetId === sheet.id), [allMarkups, sheet.id])
   /** Text markup being typed: a new one at `at`, or an existing one (`id`). */
@@ -544,6 +549,14 @@ export default function PlanViewer({ sheet }: Props) {
       return
     }
 
+    if (tool === 'areas') {
+      ;(e.currentTarget as HTMLElement).setPointerCapture(e.pointerId)
+      rectDrag.current = { pointerId: e.pointerId, sx: e.clientX, sy: e.clientY }
+      setDraft([p])
+      setCursor(p)
+      return
+    }
+
     if (tool === 'markup') {
       const type = markupOptions.type
       if (type === 'text') {
@@ -681,7 +694,11 @@ export default function PlanViewer({ sheet }: Props) {
       rectDrag.current = null
       // Dragged: finish on release. Just clicked: wait for the opposite corner.
       const dragged = Math.hypot(e.clientX - d.sx, e.clientY - d.sy) > 4 && draft[0]
-      if (dragged && tool === 'markup') {
+      if (tool === 'areas') {
+        if (dragged) void setLabelArea(areaField, areaFromPoints(draft[0], pagePointFromEvent(e), sheet.widthPt, sheet.heightPt))
+        setDraft([])
+        setCursor(null)
+      } else if (dragged && tool === 'markup') {
         const straight = markupOptions.type === 'line' || markupOptions.type === 'arrow'
         finishMarkup([draft[0], pagePointFromEvent(e, straight ? draft[0] : undefined)])
       } else if (dragged) finishShape(rectCorners(draft[0], pagePointFromEvent(e)))
@@ -782,7 +799,9 @@ export default function PlanViewer({ sheet }: Props) {
       : 'Click to add corners · click the first point or press Enter to finish'
     : tool === 'pan'
       ? null
-      : tool === 'markup'
+      : tool === 'areas'
+        ? `Drag a box round the ${FIELD_LABEL[areaField].toLowerCase()} on this sheet`
+        : tool === 'markup'
         ? MARKUP_HINT[markupOptions.type]
         : tool === 'select'
         ? selectedMarkup
@@ -861,6 +880,15 @@ export default function PlanViewer({ sheet }: Props) {
               selectedId={selectedId}
               selectedLabel={selectedLabel}
               draft={takeoffDraft}
+            />
+          )}
+          {tool === 'areas' && (
+            <AreaBoxes
+              areas={labelAreas}
+              draft={draft[0] && cursor ? { field: areaField, rect: areaFromPoints(draft[0], cursor, sheet.widthPt, sheet.heightPt) } : null}
+              pageW={sheet.widthPt}
+              pageH={sheet.heightPt}
+              scale={view.scale}
             />
           )}
           {showMarkups && (

@@ -23,23 +23,32 @@ const MAX_PIXELS = 12_000_000
 /** Words tesseract is less sure of than this are dropped. */
 const MIN_CONFIDENCE = 35
 
-let workerPromise: Promise<Worker> | null = null
+const workers = new Map<string, Promise<Worker>>()
 
-function getWorker(): Promise<Worker> {
-  workerPromise ??= import('tesseract.js').then(async ({ createWorker }) => {
-    const worker = await createWorker('eng', 1 /* LSTM only */, {
-      workerPath: `${BASE}worker.min.js`,
-      corePath: `${BASE}core`,
-      langPath: `${BASE}lang`,
-      gzip: true,
-      workerBlobURL: false,
+/**
+ * An OCR worker set up for one job. Separate workers mean a background scan
+ * and a user's area read never change each other's settings mid-way.
+ *  - 'titleblock': "sparse text" — every scrap of text in no particular order
+ *    (title blocks are boxes of short fields, not paragraphs).
+ *  - 'area': "one block of text" — what's inside a box the user drew.
+ */
+function getWorker(job: 'titleblock' | 'area'): Promise<Worker> {
+  let w = workers.get(job)
+  if (!w) {
+    w = import('tesseract.js').then(async ({ createWorker }) => {
+      const worker = await createWorker('eng', 1 /* LSTM only */, {
+        workerPath: `${BASE}worker.min.js`,
+        corePath: `${BASE}core`,
+        langPath: `${BASE}lang`,
+        gzip: true,
+        workerBlobURL: false,
+      })
+      await worker.setParameters({ tessedit_pageseg_mode: (job === 'area' ? '6' : '11') as never, user_defined_dpi: '250' })
+      return worker
     })
-    // "Sparse text": find every scrap of text in no particular order. Title blocks are
-    // boxes of short fields, not paragraphs — the default page layout mode skips some.
-    await worker.setParameters({ tessedit_pageseg_mode: '11' as never, user_defined_dpi: '250' })
-    return worker
-  })
-  return workerPromise
+    workers.set(job, w)
+  }
+  return w
 }
 
 /** Does this page have (almost) no real text, so needs OCR? */
@@ -49,7 +58,7 @@ export function needsOcr(text: PageText): boolean {
 
 /** Read the title block areas of a sheet with OCR. */
 export async function ocrSheetText(sheet: SheetMeta): Promise<PageText> {
-  const worker = await getWorker()
+  const worker = await getWorker('titleblock')
   const items: PageTextItem[] = []
   const lines: string[] = []
 
@@ -60,36 +69,70 @@ export async function ocrSheetText(sheet: SheetMeta): Promise<PageText> {
     const rh = (r.y1 - r.y0) * sheet.heightPt
     const s = Math.min(TARGET_PX_PER_PT, Math.sqrt(MAX_PIXELS / (rw * rh)))
 
-    const canvas = document.createElement('canvas')
-    canvas.width = Math.round(rw * s)
-    canvas.height = Math.round(rh * s)
-    await renderPage(sheet, canvas, s, -rx * s, -ry * s).promise
+    const read = await recogniseRegion(worker, sheet, rx, ry, rw, rh, s)
+    items.push(...read.items)
+    lines.push(...read.lines)
+  }
+  return { text: lines.join('\n'), items }
+}
 
-    const { data } = await worker.recognize(canvas, {}, { text: true, blocks: true })
-    for (const block of data.blocks ?? []) {
-      for (const para of block.paragraphs) {
-        for (const line of para.lines) {
-          // Tesseract's row height (ascenders to descenders) matches the font size closely;
-          // the box height is smaller for capitals, so it's only a fallback.
-          const fontSize = (line.rowAttributes?.rowHeight || (line.bbox.y1 - line.bbox.y0) * 1.3) / s
-          const baseline = ry + (line.baseline.y0 + line.baseline.y1) / 2 / s
-          const words = line.words.filter((w) => w.confidence >= MIN_CONFIDENCE && w.text.trim())
-          if (!words.length) continue
-          lines.push(normaliseOcrText(words.map((w) => w.text).join(' ')))
-          for (const w of words) {
-            items.push({
-              str: normaliseOcrWord(w.text),
-              x: rx + w.bbox.x0 / s,
-              y: baseline,
-              w: (w.bbox.x1 - w.bbox.x0) / s,
-              size: fontSize,
-            })
-          }
+
+/** Render part of a page (page points) at `s` px/pt and read it. */
+async function recogniseRegion(
+  worker: Worker,
+  sheet: SheetMeta,
+  rx: number,
+  ry: number,
+  rw: number,
+  rh: number,
+  s: number,
+): Promise<{ items: PageTextItem[]; lines: string[] }> {
+  const items: PageTextItem[] = []
+  const lines: string[] = []
+  const canvas = document.createElement('canvas')
+  canvas.width = Math.max(1, Math.round(rw * s))
+  canvas.height = Math.max(1, Math.round(rh * s))
+  await renderPage(sheet, canvas, s, -rx * s, -ry * s).promise
+  const { data } = await worker.recognize(canvas, {}, { text: true, blocks: true })
+  for (const block of data.blocks ?? []) {
+    for (const para of block.paragraphs) {
+      for (const line of para.lines) {
+        // Tesseract's row height (ascenders to descenders) matches the font size closely;
+        // the box height is smaller for capitals, so it's only a fallback.
+        const fontSize = (line.rowAttributes?.rowHeight || (line.bbox.y1 - line.bbox.y0) * 1.3) / s
+        const baseline = ry + (line.baseline.y0 + line.baseline.y1) / 2 / s
+        const words = line.words.filter((w) => w.confidence >= MIN_CONFIDENCE && w.text.trim())
+        if (!words.length) continue
+        lines.push(normaliseOcrText(words.map((w) => w.text).join(' ')))
+        for (const w of words) {
+          items.push({
+            str: normaliseOcrWord(w.text),
+            x: rx + w.bbox.x0 / s,
+            y: baseline,
+            w: (w.bbox.x1 - w.bbox.x0) / s,
+            size: fontSize,
+          })
         }
       }
     }
   }
-  return { text: lines.join('\n'), items }
+  return { items, lines }
+}
+
+/**
+ * Read the text in one box the user drew (page points). Rendered sharper than
+ * the title-block scan — about 350 dpi, and big enough for small print.
+ */
+export async function ocrArea(sheet: SheetMeta, box: { x: number; y: number; w: number; h: number }): Promise<PageTextItem[]> {
+  const worker = await getWorker('area')
+  // a little margin so letters touching the box edge aren't cut
+  const m = 2
+  const rx = Math.max(0, box.x - m)
+  const ry = Math.max(0, box.y - m)
+  const rw = Math.min(sheet.widthPt - rx, box.w + m * 2)
+  const rh = Math.min(sheet.heightPt - ry, box.h + m * 2)
+  const s = Math.min(Math.max(350 / 72, 160 / Math.max(rh, 1)), Math.sqrt(8_000_000 / Math.max(rw * rh, 1)))
+  return (await recogniseRegion(worker, sheet, rx, ry, rw, rh, s)).items
 }
 
 // ---------------------------------------------------------------------------

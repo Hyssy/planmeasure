@@ -51,6 +51,7 @@ A browser-based PDF takeoff and markup tool for construction plans (architectura
 - Extract the sheet number (e.g. `A-101`, `DA02`, `S-200`) and title from text, focusing on the bottom-right title block area first.
 - Show a sheet list in a sidebar with thumbnails, number, title, and scale status.
 - Users can edit any label. Edits are saved.
+- **Title-block areas** (added by Jordan): when names aren't found, the user boxes the sheet number, title and scale on one sheet; the app reads the same spot (as a fraction of the page) on every sheet — text layer if present, otherwise OCR of just that box. Never overwrites hand-edited labels or confirmed scales; scales read this way are still "Detected — please verify" and the resize rule applies. Areas are saved with the project and applied to PDFs added later.
 
 ## Takeoff features
 - Tools: **Linear** (polyline), **Area** (polygon, with optional cut-outs/deductions), **Perimeter**, **Count** (click markers).

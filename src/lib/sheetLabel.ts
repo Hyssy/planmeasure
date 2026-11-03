@@ -130,7 +130,7 @@ const FIELD_LABEL_RE =
  * Any short phrase ending in a colon counts ("Client details:", "Issue for:",
  * "Project title:", "Drawing #:"), as do the common headings without one.
  */
-function isFieldLabel(text: string): boolean {
+export function isFieldLabel(text: string): boolean {
   const t = text.trim()
   if (/:$/.test(t) && t.split(/\s+/).length <= 4) return true
   return FIELD_LABEL_RE.test(t) || NUMBER_LABEL_STRICT_RE.test(t) || TITLE_LABEL_RE.test(t)

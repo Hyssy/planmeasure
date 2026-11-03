@@ -30,7 +30,7 @@ export default function Toolbar() {
   const hasSheets = useApp((s) => s.sheets.length > 0)
 
   return (
-    <header className="flex h-12 shrink-0 items-center gap-3 border-b border-neutral-300 bg-white px-3">
+    <header className="flex min-h-12 shrink-0 flex-wrap items-center gap-x-3 gap-y-1 border-b border-neutral-300 bg-white px-3 py-1.5">
       <span className="font-semibold tracking-tight whitespace-nowrap">PlanMeasure</span>
       <ProjectMenu />
       <div className="h-6 w-px bg-neutral-200" />
@@ -54,7 +54,7 @@ export default function Toolbar() {
         }}
       />
       <div className="h-6 w-px bg-neutral-200" />
-      <div className="flex items-center gap-1" role="toolbar" aria-label="Tools">
+      <div className="flex flex-wrap items-center gap-1" role="toolbar" aria-label="Tools">
         {TOOL_GROUPS.map((group, g) => (
           <div key={g} className="flex items-center gap-1">
             {g > 0 && <div className="mx-1 h-6 w-px bg-neutral-200" />}
@@ -95,11 +95,11 @@ function UndoRedo() {
   const redo = useApp((s) => s.redo)
   return (
     <>
-      <button onClick={undo} disabled={!canUndo} title="Undo (Ctrl+Z)" className="rounded-md px-2 py-1.5 text-sm hover:bg-neutral-100 disabled:opacity-40">
-        Undo
+      <button onClick={undo} disabled={!canUndo} title="Undo (Ctrl+Z)" aria-label="Undo" className="rounded-md px-2 py-1 text-lg leading-none hover:bg-neutral-100 disabled:opacity-40">
+        ↶
       </button>
-      <button onClick={redo} disabled={!canRedo} title="Redo (Ctrl+Y)" className="rounded-md px-2 py-1.5 text-sm hover:bg-neutral-100 disabled:opacity-40">
-        Redo
+      <button onClick={redo} disabled={!canRedo} title="Redo (Ctrl+Y)" aria-label="Redo" className="rounded-md px-2 py-1 text-lg leading-none hover:bg-neutral-100 disabled:opacity-40">
+        ↷
       </button>
     </>
   )
