@@ -1,0 +1,21 @@
+# Cloudflare Pages response headers (https://developers.cloudflare.com/pages/configuration/headers/)
+
+/*
+  # The app only ever loads its own files and never sends data anywhere:
+  # plans stay on the user's computer. 'wasm-unsafe-eval' lets the PDF and
+  # OCR engines run their WebAssembly; blob: covers workers and downloads.
+  Content-Security-Policy: default-src 'self'; script-src 'self' 'wasm-unsafe-eval'; worker-src 'self' blob:; connect-src 'self' blob: data:; img-src 'self' data: blob:; style-src 'self' 'unsafe-inline'; font-src 'self' data:; object-src 'none'; base-uri 'self'; form-action 'none'; frame-ancestors 'none'
+  X-Content-Type-Options: nosniff
+  X-Frame-Options: DENY
+  Referrer-Policy: no-referrer
+  Permissions-Policy: camera=(), microphone=(), geolocation=(), payment=()
+
+# Built files have a content hash in their names, so they can be cached for good.
+/assets/*
+  Cache-Control: public, max-age=31536000, immutable
+
+# PDF and OCR engine files: cache for a week.
+/pdfjs/*
+  Cache-Control: public, max-age=604800
+/tesseract/*
+  Cache-Control: public, max-age=604800

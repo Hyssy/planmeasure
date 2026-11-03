@@ -98,6 +98,8 @@ A browser-based PDF takeoff and markup tool for construction plans (architectura
 - Code lives in a **private GitHub repo**.
 - Deployed with **Cloudflare Pages** connected to the repo (build command `npm run build`, output folder `dist`).
 - Optionally protect the site with **Cloudflare Access** so only company email addresses can open it.
+- Deploy settings are in the repo: `.node-version` (22), `public/_headers` (Content-Security-Policy: the site only loads its own files and sends data nowhere; caching). If a new feature needs to load anything from another site, the CSP must be updated — keep everything self-hosted instead where possible.
+- Phase 7 (CSV/Excel quantities) was skipped by Jordan — not needed for now.
 
 ## Testing
 - Keep a `test-plans/` folder (git-ignored) with real sample PDFs for manual testing.
