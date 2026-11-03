@@ -51,9 +51,9 @@ describe('project export and import', () => {
     await expect(sample().then((d) => buildExport(d, new Map()))).rejects.toThrow(/missing/)
   })
 
-  it('rejects files that are not PlanMeasure projects', async () => {
-    await expect(parseExport('not json')).rejects.toThrow(/isn’t a PlanMeasure project/)
-    await expect(parseExport('{"hello":1}')).rejects.toThrow(/isn’t a PlanMeasure project/)
+  it('rejects files that are not CycloMeasure projects', async () => {
+    await expect(parseExport('not json')).rejects.toThrow(/isn’t a CycloMeasure project/)
+    await expect(parseExport('{"hello":1}')).rejects.toThrow(/isn’t a CycloMeasure project/)
   })
 
   it('rejects projects from a newer version', async () => {
@@ -74,7 +74,7 @@ describe('project export and import', () => {
   })
 
   it('makes a safe file name', () => {
-    expect(exportFileName('Kitty Lane: stage 1/2')).toBe('Kitty Lane stage 1 2.planmeasure.json')
-    expect(exportFileName('   ')).toBe('project.planmeasure.json')
+    expect(exportFileName('Kitty Lane: stage 1/2')).toBe('Kitty Lane stage 1 2.cyclomeasure.json')
+    expect(exportFileName('   ')).toBe('project.cyclomeasure.json')
   })
 })

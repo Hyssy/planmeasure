@@ -1,4 +1,6 @@
-# PlanMeasure — Project Brief for Claude Code
+# CycloMeasure — Project Brief for Claude Code
+
+The app is called **CycloMeasure** (renamed from PlanMeasure by Jordan). The header shows the Cyclo wordmark followed by "Measure"; elsewhere it's "CycloMeasure". Internal names stay `planmeasure` (repo, Worker, browser database `planmeasure`, project file format id `planmeasure-project`, local-storage keys) — **don't rename those**: changing the database name would make saved projects disappear.
 
 ## Who I am
 I'm Jordan, not a developer. I build this app with Claude Code. When you work on this project:

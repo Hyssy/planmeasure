@@ -1,4 +1,4 @@
-# PlanMeasure
+# CycloMeasure
 
 Browser-based PDF takeoff and markup tool for construction plans.
 PDFs are processed entirely in your browser — nothing is uploaded.

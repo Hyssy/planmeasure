@@ -41,7 +41,7 @@ export default function Toolbar() {
         {!slim && (
           <>
             <span className="h-5 w-px bg-white/25" />
-            <span className="text-[15px] font-bold tracking-[-0.025em]">PlanMeasure</span>
+            <span className="text-[15px] font-bold tracking-[-0.025em]" aria-label="CycloMeasure">Measure</span>
           </>
         )}
       </span>

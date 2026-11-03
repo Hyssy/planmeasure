@@ -83,7 +83,7 @@ export async function exportMarkedUpPdf(opts: PdfExportOptions): Promise<number>
   const sources = await db.loadPdfs(s.projectId)
   const bytes = await buildMarkedUpPdf(sources, pages)
 
-  const project = s.projectName || 'PlanMeasure'
+  const project = s.projectName || 'CycloMeasure'
   const suffix =
     opts.pages === 'current'
       ? sheetName(s.labels[sheets[0].id], s.sheets.indexOf(sheets[0]))

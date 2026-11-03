@@ -90,7 +90,7 @@ export function buildExport(data: ProjectData, pdfBytes: Map<string, Uint8Array>
 export class ProjectFileError extends Error {}
 
 /**
- * Read an exported project file. Checks it's a PlanMeasure project, that every
+ * Read an exported project file. Checks it's a CycloMeasure project, that every
  * PDF is included, and that each PDF is byte-for-byte what was exported.
  */
 export async function parseExport(text: string): Promise<{ data: ProjectData; pdfs: Map<string, Uint8Array> }> {
@@ -98,12 +98,12 @@ export async function parseExport(text: string): Promise<{ data: ProjectData; pd
   try {
     raw = JSON.parse(text)
   } catch {
-    throw new ProjectFileError('This file isn’t a PlanMeasure project (it isn’t valid JSON).')
+    throw new ProjectFileError('This file isn’t a CycloMeasure project (it isn’t valid JSON).')
   }
   const p = raw as Partial<ExportedProject>
-  if (!p || p.format !== PROJECT_FORMAT) throw new ProjectFileError('This file isn’t a PlanMeasure project.')
+  if (!p || p.format !== PROJECT_FORMAT) throw new ProjectFileError('This file isn’t a CycloMeasure project.')
   if (typeof p.version !== 'number' || p.version > PROJECT_VERSION) {
-    throw new ProjectFileError('This project was saved by a newer version of PlanMeasure. Update the app and try again.')
+    throw new ProjectFileError('This project was saved by a newer version of CycloMeasure. Update the app and try again.')
   }
   if (!Array.isArray(p.files) || !Array.isArray(p.sheets) || !Array.isArray(p.items) || !Array.isArray(p.takeoffs)) {
     throw new ProjectFileError('This project file is incomplete or damaged.')
@@ -123,8 +123,8 @@ export async function parseExport(text: string): Promise<{ data: ProjectData; pd
   return { data: data as ProjectData, pdfs }
 }
 
-/** A safe file name for the export: "Kitty Lane takeoff.planmeasure.json" */
+/** A safe file name for the export: "Kitty Lane takeoff.cyclomeasure.json" */
 export function exportFileName(projectName: string): string {
   const safe = projectName.replace(/[\\/:*?"<>|]+/g, ' ').replace(/\s+/g, ' ').trim() || 'project'
-  return `${safe}.planmeasure.json`
+  return `${safe}.cyclomeasure.json`
 }

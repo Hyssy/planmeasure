@@ -46,8 +46,8 @@ export async function buildMarkedUpPdf(sources: Map<string, Uint8Array>, pages: 
     isolateOriginalContent(out, page)
     for (const prim of pg.build(measure)) drawPrimitive(page, prim, pg.toPdf, font, measure)
   }
-  out.setProducer('PlanMeasure')
-  out.setCreator('PlanMeasure')
+  out.setProducer('CycloMeasure')
+  out.setCreator('CycloMeasure')
   return out.save()
 }
 

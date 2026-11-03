@@ -2,7 +2,7 @@
  * Unit helpers.
  *
  * PDF geometry is in points: 1 pt = 1/72 inch = 25.4 / 72 mm.
- * All geometry in PlanMeasure is stored in PDF points, never screen pixels.
+ * All geometry in CycloMeasure is stored in PDF points, never screen pixels.
  */
 
 /** Millimetres per PDF point (exact: 25.4 / 72 ≈ 0.352778). */
