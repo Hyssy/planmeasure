@@ -33,7 +33,7 @@ export default function CalibrateDialog({ distPt, onApply, onCancel }: Props) {
       <form
         onSubmit={submit}
         onKeyDown={(e) => e.key === 'Escape' && onCancel()}
-        className="w-80 cursor-default rounded-lg bg-white p-4 shadow-xl"
+        className="w-80 cursor-default rounded-lg bg-white p-4 border border-neutral-300"
       >
         <h2 className="font-semibold">Calibrate scale</h2>
         <p className="mt-1 text-sm text-neutral-600">
@@ -44,7 +44,7 @@ export default function CalibrateDialog({ distPt, onApply, onCancel }: Props) {
           <input
             autoFocus
             inputMode="decimal"
-            className="min-w-0 flex-1 rounded border border-neutral-300 px-2 py-1.5 tabular-nums focus:border-blue-500 focus:outline-none"
+            className="min-w-0 flex-1 rounded border border-neutral-300 px-2 py-1.5 tabular-nums focus:border-graphite focus:outline-none"
             placeholder={unit === 'mm' ? 'e.g. 3600' : 'e.g. 3.6'}
             value={value}
             onChange={(e) => setValue(e.target.value)}
@@ -71,7 +71,7 @@ export default function CalibrateDialog({ distPt, onApply, onCancel }: Props) {
           <button
             type="submit"
             disabled={!mmPerPt}
-            className="rounded bg-blue-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-blue-700 disabled:opacity-50"
+            className="rounded bg-accent px-3 py-1.5 text-sm font-medium text-graphite hover:bg-accent-hover disabled:opacity-50"
           >
             Set scale
           </button>

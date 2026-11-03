@@ -851,7 +851,7 @@ export default function PlanViewer({ sheet }: Props) {
   return (
     <div
       ref={boxRef}
-      className={`relative h-full w-full overflow-hidden bg-neutral-500 select-none ${cursorClass}`}
+      className={`relative h-full w-full overflow-hidden bg-steel-blue-2 select-none ${cursorClass}`}
       onPointerDown={onPointerDown}
       onPointerMove={onPointerMove}
       onPointerUp={endDrag}
@@ -861,7 +861,7 @@ export default function PlanViewer({ sheet }: Props) {
     >
       <canvas
         ref={baseRef}
-        className="absolute top-0 left-0 bg-white shadow-lg"
+        className="absolute top-0 left-0 bg-white"
         style={{ transformOrigin: '0 0' }}
       />
       <div
@@ -920,17 +920,17 @@ export default function PlanViewer({ sheet }: Props) {
       {hint && !calibLine && !textEdit && (
         <div
           data-testid="tool-hint"
-          className="pointer-events-none absolute top-3 left-1/2 max-w-[90%] -translate-x-1/2 rounded bg-black/70 px-3 py-1.5 text-center text-sm text-white"
+          className="pointer-events-none absolute top-3 left-1/2 max-w-[90%] -translate-x-1/2 rounded bg-graphite/90 px-3 py-1.5 text-center text-sm text-chalk"
         >
           {hint}
-          <span className="text-white/60">
+          <span className="text-foundation-grey">
             {' · Space+drag to pan'}
             {tool !== 'select' || cutoutTarget ? ' · Esc to cancel' : ''}
           </span>
-          {notice && <div className="mt-1 text-amber-300">⚠ {notice}</div>}
+          {notice && <div className="mt-1 text-signal-orange-3">{notice}</div>}
           {noScaleWarning && (
-            <div className="mt-1 text-amber-300">
-              ⚠ No scale on this sheet — these shapes won’t count in totals until you calibrate.
+            <div className="mt-1 text-signal-orange-3">
+              No scale on this sheet — these shapes won’t count in totals until you calibrate.
             </div>
           )}
         </div>
@@ -949,7 +949,7 @@ export default function PlanViewer({ sheet }: Props) {
       )}
 
       <div
-        className="absolute right-3 bottom-3 flex items-center gap-1 rounded-lg bg-white/95 p-1 text-sm shadow-md"
+        className="absolute right-3 bottom-3 flex items-center gap-1 rounded-lg bg-white/95 p-1 text-sm"
         onPointerDown={(e) => e.stopPropagation()}
       >
         <ZoomButton label="Zoom out" onClick={() => zoomCentre(1 / 1.25)}>−</ZoomButton>
@@ -966,7 +966,7 @@ export default function PlanViewer({ sheet }: Props) {
         </button>
       </div>
 
-      <div className="pointer-events-none absolute bottom-3 left-3 rounded bg-black/60 px-2 py-1 text-xs text-white">
+      <div className="pointer-events-none absolute bottom-3 left-3 rounded bg-graphite/85 px-2 py-1 text-xs text-chalk">
         {label?.number && <strong className="font-semibold">{label.number}</strong>}
         {label?.title && <> {label.title}</>}
         {(label?.number || label?.title) && ' · '}
@@ -976,7 +976,7 @@ export default function PlanViewer({ sheet }: Props) {
       {measured && (
         <div
           data-testid="measurement"
-          className="pointer-events-none absolute bottom-12 left-3 rounded bg-blue-700 px-2.5 py-1 text-sm font-medium text-white"
+          className="pointer-events-none absolute bottom-12 left-3 rounded bg-graphite px-2.5 py-1 text-sm font-medium text-chalk"
         >
           Measured: {lengthLabel(measured[0], measured[1])}
         </div>

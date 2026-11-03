@@ -1,5 +1,55 @@
 @import "tailwindcss";
 
+/*
+ * Cyclo brand theme — from the Cyclo design system (tokens.json).
+ * Brand colours are exact. Marked "derived" = not in the guide: darker warm
+ * greys made from Foundation Grey so small UI text passes contrast (4.5:1+).
+ */
+@theme {
+  /* Primary palette */
+  --color-graphite: #282828;
+  --color-chalk: #e5e5db;
+  --color-sandstone: #d6d6ca;
+  --color-foundation-grey: #aaa59c;
+  --color-steel-blue: #a9b7ba;
+  --color-signal-orange: #f9710d;
+
+  /* Secondary tints */
+  --color-signal-orange-2: #832c15;
+  --color-signal-orange-3: #feaa72;
+  --color-signal-orange-4: #ffc7a0;
+  --color-steel-blue-2: #6f7b7d;
+  --color-steel-blue-3: #cbd4d6;
+  --color-steel-blue-4: #e5e9ea;
+  --color-chalk-2: #ebebe4;
+  --color-chalk-3: #f2f2ed;
+  --color-chalk-4: #f8f8f6;
+
+  /* Semantic */
+  --color-accent: #f9710d; /* Signal Orange: primary button, active tool, selection */
+  --color-accent-hover: #feaa72;
+  --color-accent-text: #832c15; /* readable orange text: 9.0:1 on white */
+
+  /*
+   * The UI's greys, replaced with Cyclo's warm neutrals so every existing
+   * neutral-* class follows the brand.
+   */
+  --color-neutral-50: #f8f8f6; /* chalk-4 */
+  --color-neutral-100: #f2f2ed; /* chalk-3 */
+  --color-neutral-200: #e5e5db; /* chalk — dividers */
+  --color-neutral-300: #d6d6ca; /* sandstone — borders */
+  --color-neutral-400: #8a857c; /* derived — placeholder text, 3.7:1 */
+  --color-neutral-500: #6b6760; /* derived — secondary text, 5.6:1 on white */
+  --color-neutral-600: #57534d; /* derived */
+  --color-neutral-700: #3f3c38; /* derived */
+  --color-neutral-800: #282828; /* graphite */
+  --color-neutral-900: #1f1f1f;
+  --color-neutral-950: #141414;
+
+  /* One family: Diatype when licensed for web; Arial (the guide's fallback) until then */
+  --font-sans: Arial, Helvetica, sans-serif;
+}
+
 html,
 body,
 #root {
@@ -8,8 +58,39 @@ body,
 }
 
 body {
-  background: #e5e7eb;
-  color: #111827;
-  font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  background: var(--color-chalk-3);
+  color: var(--color-graphite);
+  font-family: var(--font-sans);
+  letter-spacing: -0.01em; /* the guide's body tracking (-10) */
   overscroll-behavior: none;
+  accent-color: var(--color-signal-orange); /* tick boxes and radio buttons */
+}
+
+/* Keyboard focus: 2px Graphite (the guide's focus-ring token) */
+:focus-visible {
+  outline: 2px solid var(--color-graphite);
+  outline-offset: 2px;
+}
+header :focus-visible {
+  outline-color: var(--color-signal-orange);
+}
+
+@layer components {
+  /* Section label: small Signal Orange square, then the label (the guide's "▪ Positioning") */
+  .section-label {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 12px;
+    font-weight: 700;
+    letter-spacing: -0.01em;
+    color: var(--color-graphite);
+  }
+  .section-label::before {
+    content: '';
+    width: 7px;
+    height: 7px;
+    background: var(--color-signal-orange);
+    flex: none;
+  }
 }

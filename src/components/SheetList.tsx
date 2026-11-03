@@ -21,7 +21,7 @@ export default function SheetList() {
 
   return (
     <aside className="flex w-60 shrink-0 flex-col border-r border-neutral-300 bg-white">
-      <div className="border-b border-neutral-200 px-3 py-2 text-xs font-semibold tracking-wide text-neutral-500 uppercase">
+      <div className="border-b border-neutral-200 px-3 py-2 section-label">
         Sheets {sheets.length > 0 && <span className="font-normal">({sheets.length})</span>}
       </div>
       {sheets.length > 0 && (
@@ -43,7 +43,7 @@ export default function SheetList() {
             onChange={(e) => setQuery(e.target.value)}
             placeholder="Search number or title"
             aria-label="Search sheets"
-            className="w-full rounded border border-neutral-300 px-2 py-1 text-sm focus:border-blue-500 focus:outline-none"
+            className="w-full rounded border border-neutral-300 px-2 py-1 text-sm focus:border-graphite focus:outline-none"
           />
         </div>
       )}
@@ -70,7 +70,7 @@ function SheetItem({ sheet, index }: { sheet: SheetMeta; index: number }) {
   return (
     <li
       className={`rounded-md border p-2 transition ${
-        selected ? 'border-blue-500 bg-blue-50 ring-1 ring-blue-500' : 'border-neutral-200 hover:border-neutral-400'
+        selected ? 'border-accent bg-signal-orange-4/25 ring-1 ring-accent' : 'border-neutral-200 hover:border-neutral-400'
       }`}
     >
       <button onClick={() => selectSheet(sheet.id)} className="block w-full text-left" aria-label={`Open ${sheetName(label, index)}`}>
@@ -114,7 +114,7 @@ function SheetItem({ sheet, index }: { sheet: SheetMeta; index: number }) {
                       : 'No title found')}
             </div>
             {label?.fromOcr && !label.edited && (label.number || label.title) && (
-              <div className="text-[11px] text-amber-800">Read by OCR — please check</div>
+              <div className="text-[11px] text-accent-text">Read by OCR — please check</div>
             )}
             {label?.fromArea && !label.fromOcr && !label.edited && (
               <div className="text-[11px] text-neutral-500">From title-block areas</div>
@@ -159,20 +159,20 @@ function LabelEditor(props: { sheet: SheetMeta; label: SheetLabel | undefined; o
         onChange={(e) => setNumber(e.target.value)}
         placeholder="Sheet number, e.g. A-101"
         aria-label="Sheet number"
-        className="w-full rounded border border-neutral-300 px-1.5 py-1 text-sm font-semibold focus:border-blue-500 focus:outline-none"
+        className="w-full rounded border border-neutral-300 px-1.5 py-1 text-sm font-semibold focus:border-graphite focus:outline-none"
       />
       <input
         value={title}
         onChange={(e) => setTitle(e.target.value)}
         placeholder="Title, e.g. Ground floor plan"
         aria-label="Sheet title"
-        className="w-full rounded border border-neutral-300 px-1.5 py-1 text-xs focus:border-blue-500 focus:outline-none"
+        className="w-full rounded border border-neutral-300 px-1.5 py-1 text-xs focus:border-graphite focus:outline-none"
       />
       <div className="flex justify-end gap-1">
         <button type="button" onClick={props.onDone} className="rounded px-2 py-0.5 text-xs hover:bg-neutral-200">
           Cancel
         </button>
-        <button type="submit" className="rounded bg-blue-600 px-2 py-0.5 text-xs font-medium text-white hover:bg-blue-700">
+        <button type="submit" className="rounded bg-accent px-2 py-0.5 text-xs font-medium text-graphite hover:bg-accent-hover">
           Save
         </button>
       </div>
@@ -184,9 +184,9 @@ function ScaleBadge(props: { scale: SheetScale | undefined; multiple: boolean; r
   const { scale, multiple, resized } = props
   const short = scale?.source === 'calibrated' ? 'Calibrated' : scale?.label.split(' (')[0]
   const [cls, text] = !scale
-    ? ['bg-amber-100 text-amber-900', resized ? '⚠ Resized — calibrate' : multiple ? '⚠ Several scales — choose' : '⚠ No scale']
+    ? ['bg-signal-orange-4 text-accent-text', resized ? 'Resized — calibrate' : multiple ? 'Several scales — choose' : 'No scale']
     : scale.status === 'detected'
-      ? ['bg-amber-100 text-amber-900', `${short} · verify`]
-      : ['bg-green-100 text-green-800', `✓ ${short}`]
+      ? ['bg-signal-orange-4 text-accent-text', `${short} · verify`]
+      : ['bg-steel-blue-4 text-graphite', `✓ ${short}`]
   return <div className={`mt-1 inline-block rounded px-1.5 py-0.5 text-xs font-medium ${cls}`}>{text}</div>
 }

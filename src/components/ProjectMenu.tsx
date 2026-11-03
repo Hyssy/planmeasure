@@ -26,11 +26,11 @@ export default function ProjectMenu() {
         onClick={() => setOpen((o) => !o)}
         aria-expanded={open}
         data-testid="project-menu"
-        className="flex max-w-56 items-center gap-1 rounded-md border border-neutral-300 px-2.5 py-1.5 text-sm hover:bg-neutral-100"
+        className="flex max-w-56 items-center gap-1 rounded-md border border-chalk/40 px-2.5 py-1.5 text-sm text-chalk hover:bg-white/10"
         title="Projects: rename, switch, export or import"
       >
         <span className="truncate">{projectId ? projectName : 'No project'}</span>
-        <span className="text-neutral-400">▾</span>
+        <span className="text-foundation-grey">▾</span>
       </button>
       {projectId && <SaveBadge status={saveStatus} />}
       {open && <MenuPanel onClose={() => setOpen(false)} />}
@@ -39,8 +39,8 @@ export default function ProjectMenu() {
 }
 
 function SaveBadge({ status }: { status: string }) {
-  const text = status === 'saving' ? 'Saving…' : status === 'saved' ? 'Saved' : status === 'error' ? '⚠ Not saved' : ''
-  const cls = status === 'error' ? 'text-red-700' : 'text-neutral-500'
+  const text = status === 'saving' ? 'Saving…' : status === 'saved' ? 'Saved' : status === 'error' ? 'Not saved' : ''
+  const cls = status === 'error' ? 'text-signal-orange-3' : 'text-foundation-grey'
   return (
     <span data-testid="save-status" className={`w-20 text-xs ${cls}`} title={status === 'error' ? 'Couldn’t save to browser storage. Export the project to keep a copy.' : 'Saved in this browser'}>
       {text}
@@ -69,7 +69,7 @@ function MenuPanel({ onClose }: { onClose: () => void }) {
   const others = (projects ?? []).filter((p) => p.id !== projectId)
 
   return (
-    <div className="absolute top-full left-0 z-50 mt-1 w-80 rounded-lg border border-neutral-200 bg-white p-3 text-sm shadow-xl" data-testid="project-panel">
+    <div className="absolute top-full left-0 z-50 mt-1 w-80 rounded-lg border border-neutral-300 bg-white p-3 text-sm text-graphite" data-testid="project-panel">
       {projectId && (
         <form
           onSubmit={(e) => {
@@ -78,14 +78,14 @@ function MenuPanel({ onClose }: { onClose: () => void }) {
             onClose()
           }}
         >
-          <label className="text-xs font-semibold tracking-wide text-neutral-500 uppercase">
-            Project name
+          <label className="block">
+            <span className="section-label">Project name</span>
             <input
               value={name}
               onChange={(e) => setName(e.target.value)}
               onBlur={() => renameProject(name)}
               aria-label="Project name"
-              className="mt-1 block w-full rounded border border-neutral-300 px-2 py-1 text-sm font-normal tracking-normal text-neutral-900 normal-case focus:border-blue-500 focus:outline-none"
+              className="mt-1 block w-full rounded border border-neutral-300 px-2 py-1 text-sm font-normal text-graphite focus:border-graphite focus:outline-none"
             />
           </label>
         </form>
@@ -136,7 +136,7 @@ function MenuPanel({ onClose }: { onClose: () => void }) {
       />
 
       <div className="mt-3 border-t border-neutral-200 pt-2">
-        <div className="text-xs font-semibold tracking-wide text-neutral-500 uppercase">Other projects in this browser</div>
+        <div className="section-label">Other projects in this browser</div>
         {projects === null ? (
           <p className="py-2 text-xs text-neutral-400">Loading…</p>
         ) : others.length === 0 ? (

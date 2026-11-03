@@ -107,15 +107,15 @@ export default function App() {
       </div>
 
       {dragOver && (
-        <div className="pointer-events-none fixed inset-0 z-50 flex items-center justify-center bg-blue-600/20">
-          <div className="rounded-xl bg-white px-8 py-6 text-lg font-medium shadow-xl">
+        <div className="pointer-events-none fixed inset-0 z-50 flex items-center justify-center bg-accent/20">
+          <div className="rounded-xl bg-white px-8 py-6 text-lg font-medium border border-neutral-300">
             Drop PDFs to open them
           </div>
         </div>
       )}
 
       {errors.length > 0 && (
-        <div className="fixed top-14 left-1/2 z-40 w-[28rem] -translate-x-1/2 rounded-lg border border-red-300 bg-red-50 p-3 text-sm text-red-800 shadow-lg">
+        <div className="fixed top-14 left-1/2 z-40 w-[28rem] -translate-x-1/2 rounded-lg border border-red-300 bg-red-50 p-3 text-sm text-red-800">
           {errors.map((e) => (
             <p key={e}>{e}</p>
           ))}

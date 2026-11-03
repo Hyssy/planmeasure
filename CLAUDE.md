@@ -85,11 +85,13 @@ A browser-based PDF takeoff and markup tool for construction plans (architectura
 8. **Deploy**: Cloudflare Pages from the GitHub repo.
 9. **Nice-to-haves**: compare two revisions, print-ready quantity report, whole-page OCR. (Title-block OCR for flattened sets was done after Phase 3.)
 
-## Branding (decided — do later)
-- The app will be branded to the **Cyclo design system** on claude.ai: https://claude.ai/artifact/G2hkn8FLdfLgG4M7tJ1n7s (read its `project/README.md` and `project/tokens.json`).
-- **Timing:** build features first; the full rebrand is a separate step once the tools are in place. Don't restyle as part of feature work, but keep styling simple (Tailwind classes) so the rebrand is easy.
-- **Font:** use **Arial** (the guide's approved fallback) for now. ABC Diatype needs its web licence confirmed before it's bundled into the site.
-- Plan for the rebrand: Graphite header with chalk wordmark; White/Chalk panels with Graphite text; Signal Orange (`#F9710D`) only for the primary button, selection and active tool; readable orange text uses `#832C15`; a compact UI type scale (12–14px) with the brand's tight tracking; flat colour, no shadows or gradients; sentence case, Australian English. Takeoff item colours are a separate, distinguishable set, not brand colours.
+## Branding (done — Cyclo design system)
+- Branded to the **Cyclo design system** on claude.ai: https://claude.ai/artifact/G2hkn8FLdfLgG4M7tJ1n7s (read its `project/README.md` and `project/tokens.json`). Keep new UI consistent with it.
+- **Where it lives:** colours are Tailwind theme tokens in `src/index.css` (`graphite`, `chalk`, `sandstone`, `signal-orange`, `steel-blue` and tints; semantic `accent`, `accent-hover`, `accent-text`). The `neutral-*` palette is remapped to Cyclo's warm neutrals, so use `neutral-*` for greys. Logos are in `src/assets/brand/` (copied unchanged — never redraw or recolour); the favicon is the Cyclo icon.
+- **Rules in use:** Graphite header with the chalk wordmark; White/Chalk panels with Graphite text; Signal Orange only for the primary button, active tool and selection, always with **Graphite text on orange** (white on orange fails contrast); readable orange text uses `accent-text` (#832C15); warnings use the orange family, "confirmed" uses steel blue, real errors stay red; section labels are sentence case with the small orange square (`.section-label`); flat colour, no shadows; no emoji (no ⚠).
+- **Derived (not in the guide):** neutral-400…700 are darker warm greys made from Foundation Grey so small text passes 4.5:1. Foundation Grey itself fails as small text on white — don't use it for body or small text on light grounds.
+- **Font:** **Arial** (the guide's approved fallback) until the ABC Diatype web licence is confirmed; then add the font files and change `--font-sans`.
+- Takeoff item colours and markup colours are a separate, distinguishable set, not brand colours.
 
 ## Hosting
 - Code lives in a **private GitHub repo**.

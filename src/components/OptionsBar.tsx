@@ -223,7 +223,7 @@ function AreasBar() {
       <button
         disabled={!any || !!progress}
         onClick={() => void applyLabelAreas()}
-        className="rounded bg-blue-600 px-2.5 py-0.5 font-medium text-white hover:bg-blue-700 disabled:opacity-40"
+        className="rounded bg-accent px-2.5 py-0.5 font-medium text-graphite hover:bg-accent-hover disabled:opacity-40"
         data-testid="apply-areas"
       >
         {progress ? `Reading ${progress.done} of ${progress.total}…` : `Apply to all ${sheetCount} sheets`}

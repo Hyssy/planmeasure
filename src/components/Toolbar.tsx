@@ -1,4 +1,5 @@
 import { useRef, useState } from 'react'
+import wordmark from '../assets/brand/cyclo-wordmark-chalk.svg'
 import { useApp, type Tool } from '../store'
 import ExportPdfDialog from './ExportPdfDialog'
 import ProjectMenu from './ProjectMenu'
@@ -30,12 +31,17 @@ export default function Toolbar() {
   const hasSheets = useApp((s) => s.sheets.length > 0)
 
   return (
-    <header className="flex min-h-12 shrink-0 flex-wrap items-center gap-x-3 gap-y-1 border-b border-neutral-300 bg-white px-3 py-1.5">
-      <span className="font-semibold tracking-tight whitespace-nowrap">PlanMeasure</span>
+    <header className="flex min-h-12 shrink-0 flex-wrap items-center gap-x-3 gap-y-1 bg-graphite px-3 py-1.5 text-chalk">
+      <span className="flex items-center gap-3 whitespace-nowrap pr-1">
+        {/* Cyclo wordmark, chalk on graphite, as supplied (never redrawn) */}
+        <img src={wordmark} alt="Cyclo" className="h-[15px] w-auto" />
+        <span className="h-5 w-px bg-white/25" />
+        <span className="text-[15px] font-bold tracking-[-0.025em]">PlanMeasure</span>
+      </span>
       <ProjectMenu />
-      <div className="h-6 w-px bg-neutral-200" />
+      <div className="h-6 w-px bg-white/20" />
       <button
-        className="rounded-md bg-blue-600 px-3 py-1.5 text-sm font-medium whitespace-nowrap text-white hover:bg-blue-700 disabled:opacity-60"
+        className="rounded-md bg-accent px-3 py-1.5 text-sm font-medium whitespace-nowrap text-graphite hover:bg-accent-hover disabled:opacity-60"
         onClick={() => inputRef.current?.click()}
         disabled={loading}
       >
@@ -53,11 +59,11 @@ export default function Toolbar() {
           if (files.length) void openFiles(files)
         }}
       />
-      <div className="h-6 w-px bg-neutral-200" />
+      <div className="h-6 w-px bg-white/20" />
       <div className="flex flex-wrap items-center gap-1" role="toolbar" aria-label="Tools">
         {TOOL_GROUPS.map((group, g) => (
           <div key={g} className="flex items-center gap-1">
-            {g > 0 && <div className="mx-1 h-6 w-px bg-neutral-200" />}
+            {g > 0 && <div className="mx-1 h-6 w-px bg-white/20" />}
             {group.map((t) => (
               <button
                 key={t.id}
@@ -66,7 +72,7 @@ export default function Toolbar() {
                 title={`${t.hint} (${t.key})`}
                 aria-pressed={tool === t.id}
                 className={`rounded-md px-2.5 py-1.5 text-sm font-medium whitespace-nowrap disabled:opacity-40 ${
-                  tool === t.id ? 'bg-neutral-800 text-white' : 'hover:bg-neutral-100'
+                  tool === t.id ? 'bg-accent text-graphite' : 'text-chalk hover:bg-white/10'
                 }`}
               >
                 {t.label}
@@ -74,14 +80,14 @@ export default function Toolbar() {
             ))}
           </div>
         ))}
-        <div className="mx-1 h-6 w-px bg-neutral-200" />
+        <div className="mx-1 h-6 w-px bg-white/20" />
         <UndoRedo />
-        <div className="mx-1 h-6 w-px bg-neutral-200" />
+        <div className="mx-1 h-6 w-px bg-white/20" />
         <Layers />
-        <div className="mx-1 h-6 w-px bg-neutral-200" />
+        <div className="mx-1 h-6 w-px bg-white/20" />
         <ExportPdfButton />
       </div>
-      <span className="ml-auto hidden text-xs whitespace-nowrap text-neutral-500 2xl:inline">
+      <span className="ml-auto hidden text-xs whitespace-nowrap text-foundation-grey 2xl:inline">
         Scroll to zoom · Space+drag to pan · files stay on your computer
       </span>
     </header>
@@ -95,10 +101,10 @@ function UndoRedo() {
   const redo = useApp((s) => s.redo)
   return (
     <>
-      <button onClick={undo} disabled={!canUndo} title="Undo (Ctrl+Z)" aria-label="Undo" className="rounded-md px-2 py-1 text-lg leading-none hover:bg-neutral-100 disabled:opacity-40">
+      <button onClick={undo} disabled={!canUndo} title="Undo (Ctrl+Z)" aria-label="Undo" className="rounded-md px-2 py-1 text-lg leading-none text-chalk hover:bg-white/10 disabled:opacity-35">
         ↶
       </button>
-      <button onClick={redo} disabled={!canRedo} title="Redo (Ctrl+Y)" aria-label="Redo" className="rounded-md px-2 py-1 text-lg leading-none hover:bg-neutral-100 disabled:opacity-40">
+      <button onClick={redo} disabled={!canRedo} title="Redo (Ctrl+Y)" aria-label="Redo" className="rounded-md px-2 py-1 text-lg leading-none text-chalk hover:bg-white/10 disabled:opacity-35">
         ↷
       </button>
     </>
@@ -132,7 +138,7 @@ function ExportPdfButton() {
         onClick={() => setOpen(true)}
         disabled={!hasProject}
         title="Export a marked-up PDF: this page, marked-up pages or the whole document"
-        className="rounded-md border border-neutral-300 px-2.5 py-1.5 text-sm font-medium whitespace-nowrap hover:bg-neutral-100 disabled:opacity-40"
+        className="rounded-md border border-chalk/60 px-2.5 py-1.5 text-sm font-medium whitespace-nowrap text-chalk hover:bg-white/10 disabled:opacity-40"
       >
         Export PDF
       </button>

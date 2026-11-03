@@ -45,11 +45,11 @@ export default function ItemsPanel() {
   return (
     <aside className="flex w-72 shrink-0 flex-col border-l border-neutral-300 bg-white">
       <div className="flex items-center justify-between border-b border-neutral-200 px-3 py-2">
-        <span className="text-xs font-semibold tracking-wide text-neutral-500 uppercase">Items &amp; quantities</span>
+        <span className="section-label">Items &amp; quantities</span>
         <button
           onClick={() => setAdding((a) => !a)}
           disabled={!sheets.length}
-          className="rounded bg-blue-600 px-2 py-0.5 text-xs font-medium text-white hover:bg-blue-700 disabled:opacity-40"
+          className="rounded bg-accent px-2 py-0.5 text-xs font-medium text-graphite hover:bg-accent-hover disabled:opacity-40"
         >
           + Item
         </button>
@@ -115,7 +115,7 @@ function ItemRow(props: {
   return (
     <li
       data-testid="item-row"
-      className={`border-b border-neutral-100 px-3 py-2 ${active ? 'bg-blue-50' : 'hover:bg-neutral-50'}`}
+      className={`border-b border-neutral-100 px-3 py-2 ${active ? 'bg-signal-orange-4/25' : 'hover:bg-neutral-50'}`}
     >
       <div className="flex items-start gap-2">
         <span className="mt-1 h-3 w-3 shrink-0 rounded-sm" style={{ background: item.colour }} />
@@ -142,19 +142,19 @@ function ItemRow(props: {
         <div className="mt-1 space-y-0.5 text-xs" data-testid="item-warnings">
           {total.unscaled > 0 && (
             <div className="text-red-700">
-              ⚠ {total.unscaled} shape{total.unscaled > 1 ? 's' : ''} on unscaled sheets not counted
+              {total.unscaled} shape{total.unscaled > 1 ? 's' : ''} on unscaled sheets not counted
             </div>
           )}
           {total.unverified > 0 && (
-            <div className="text-amber-800">
-              ⚠ includes {total.unverified} shape{total.unverified > 1 ? 's' : ''} on an unverified scale
+            <div className="text-accent-text">
+              includes {total.unverified} shape{total.unverified > 1 ? 's' : ''} on an unverified scale
             </div>
           )}
         </div>
       )}
       {showSheets && total.bySheet.length > 0 && (
         <>
-          <button onClick={() => setOpen((o) => !o)} className="mt-1 text-xs text-blue-700 hover:underline">
+          <button onClick={() => setOpen((o) => !o)} className="mt-1 text-xs text-accent-text hover:underline">
             {open ? 'Hide' : 'Show'} by sheet ({total.bySheet.length})
           </button>
           {open && (
@@ -169,7 +169,7 @@ function ItemRow(props: {
                       ) : (
                         <>
                           {formatQuantity(row.total, item.kind)}
-                          {row.unverified > 0 && <span className="text-amber-800"> ⚠</span>}
+                          {row.unverified > 0 && <span className="text-accent-text" title="unverified scale"> (unverified)</span>}
                           {row.unscaled > 0 && <span className="text-red-700"> + {row.unscaled} unscaled</span>}
                         </>
                       )}
@@ -210,7 +210,7 @@ function NewItemForm({ onDone }: { onDone: () => void }) {
         onChange={(e) => setName(e.target.value)}
         placeholder="Name, e.g. Internal wall – plasterboard"
         aria-label="Item name"
-        className="w-full rounded border border-neutral-300 px-2 py-1 focus:border-blue-500 focus:outline-none"
+        className="w-full rounded border border-neutral-300 px-2 py-1 focus:border-graphite focus:outline-none"
       />
       <div className="flex gap-2">
         <select
@@ -232,13 +232,13 @@ function NewItemForm({ onDone }: { onDone: () => void }) {
         onChange={(e) => setTrade(e.target.value)}
         placeholder="Trade (optional), e.g. Plastering"
         aria-label="Trade"
-        className="w-full rounded border border-neutral-300 px-2 py-1 focus:border-blue-500 focus:outline-none"
+        className="w-full rounded border border-neutral-300 px-2 py-1 focus:border-graphite focus:outline-none"
       />
       <div className="flex justify-end gap-1">
         <button type="button" onClick={onDone} className="rounded px-2 py-1 text-xs hover:bg-neutral-200">
           Cancel
         </button>
-        <button type="submit" className="rounded bg-blue-600 px-2 py-1 text-xs font-medium text-white hover:bg-blue-700">
+        <button type="submit" className="rounded bg-accent px-2 py-1 text-xs font-medium text-graphite hover:bg-accent-hover">
           Add and start drawing
         </button>
       </div>
@@ -270,7 +270,7 @@ function EditItemForm({ item, onDone }: { item: Item; onDone: () => void }) {
             value={name}
             onChange={(e) => setName(e.target.value)}
             aria-label="Item name"
-            className="min-w-0 flex-1 rounded border border-neutral-300 px-2 py-1 focus:border-blue-500 focus:outline-none"
+            className="min-w-0 flex-1 rounded border border-neutral-300 px-2 py-1 focus:border-graphite focus:outline-none"
           />
           <ColourPicker value={colour} onChange={setColour} />
         </div>
@@ -279,7 +279,7 @@ function EditItemForm({ item, onDone }: { item: Item; onDone: () => void }) {
           onChange={(e) => setTrade(e.target.value)}
           placeholder="Trade (optional)"
           aria-label="Trade"
-          className="w-full rounded border border-neutral-300 px-2 py-1 focus:border-blue-500 focus:outline-none"
+          className="w-full rounded border border-neutral-300 px-2 py-1 focus:border-graphite focus:outline-none"
         />
         <div className="flex items-center justify-between">
           <button
@@ -298,7 +298,7 @@ function EditItemForm({ item, onDone }: { item: Item; onDone: () => void }) {
             <button type="button" onClick={onDone} className="rounded px-2 py-1 text-xs hover:bg-neutral-200">
               Cancel
             </button>
-            <button type="submit" className="rounded bg-blue-600 px-2 py-1 text-xs font-medium text-white hover:bg-blue-700">
+            <button type="submit" className="rounded bg-accent px-2 py-1 text-xs font-medium text-graphite hover:bg-accent-hover">
               Save
             </button>
           </div>
@@ -316,7 +316,7 @@ function ColourPicker({ value, onChange }: { value: string; onChange: (c: string
       ))}
       <details className="relative">
         <summary className="cursor-pointer list-none rounded px-1 text-xs text-neutral-500 hover:bg-neutral-200">more</summary>
-        <div className="absolute right-0 z-10 mt-1 flex gap-1 rounded border border-neutral-200 bg-white p-1 shadow">
+        <div className="absolute right-0 z-10 mt-1 flex gap-1 rounded border border-neutral-300 bg-white p-1">
           {ITEM_COLOURS.slice(5).map((c) => (
             <Swatch key={c} c={c} value={value} onChange={onChange} />
           ))}
@@ -356,12 +356,12 @@ function SelectedShape({ scaleInfos }: { scaleInfos: Record<string, SheetScaleIn
   const q = takeoffQuantity(takeoff, item.kind, scaleInfos[takeoff.sheetId])
   return (
     <div className="border-t border-neutral-300 bg-neutral-50 p-3 text-sm" data-testid="selected-shape">
-      <div className="text-xs font-semibold tracking-wide text-neutral-500 uppercase">Selected shape</div>
+      <div className="section-label">Selected shape</div>
       <div className="mt-1 text-lg font-semibold tabular-nums">
         {q.value === null ? 'No scale' : formatQuantity(q.value, item.kind)}
         {item.kind === 'count' && ' each'}
         {q.state === 'unverified' && item.kind !== 'count' && q.value !== null && (
-          <span className="ml-1 text-xs font-normal text-amber-800">unverified scale</span>
+          <span className="ml-1 text-xs font-normal text-accent-text">unverified scale</span>
         )}
       </div>
       {item.kind === 'area' && (

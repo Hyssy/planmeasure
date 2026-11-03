@@ -27,7 +27,7 @@ export default function ScaleBar({ sheet }: { sheet: SheetMeta }) {
   if (scale?.status === 'confirmed') {
     content = (
       <>
-        <span className="rounded bg-green-100 px-2 py-0.5 font-medium text-green-800">✓ {scale.label}</span>
+        <span className="rounded bg-steel-blue-4 px-2 py-0.5 font-medium text-graphite">✓ {scale.label}</span>
         <span className="text-neutral-500">
           {scale.source === 'calibrated' ? 'Set by calibration' : 'Confirmed'}
         </span>
@@ -39,8 +39,8 @@ export default function ScaleBar({ sheet }: { sheet: SheetMeta }) {
   } else if (scale?.status === 'detected') {
     content = (
       <>
-        <span className="rounded bg-amber-100 px-2 py-0.5 font-medium text-amber-900">{scale.label}</span>
-        <span className="text-amber-900">
+        <span className="rounded bg-signal-orange-4 px-2 py-0.5 font-medium text-accent-text">{scale.label}</span>
+        <span className="text-accent-text">
           Detected{detection?.ocr === 'done' ? ' by OCR' : ''} — please verify
         </span>
         <span className="text-neutral-500">(measure a known dimension, or calibrate)</span>
@@ -56,7 +56,7 @@ export default function ScaleBar({ sheet }: { sheet: SheetMeta }) {
     const page = paperSizeFromPt(sheet.widthPt, sheet.heightPt)
     content = (
       <>
-        <span className="font-medium text-amber-900">⚠ Sheet has been resized</span>
+        <span className="font-medium text-accent-text">Sheet has been resized</span>
         <span className="text-neutral-600">
           It says {mismatched.map(describeCandidate).join(', ')}, but this PDF is{' '}
           {page.name ?? `${Math.round(page.widthMm)} × ${Math.round(page.heightMm)} mm`}, so the printed
@@ -69,7 +69,7 @@ export default function ScaleBar({ sheet }: { sheet: SheetMeta }) {
   } else if (candidates.length > 1) {
     content = (
       <>
-        <span className="font-medium text-amber-900">⚠ Several scales on this sheet:</span>
+        <span className="font-medium text-accent-text">Several scales on this sheet:</span>
         {candidates.map((c) => (
           <BarButton key={describeCandidate(c)} onClick={() => setRatioScale(sheet.id, c, 'detected')}>
             Use {describeCandidate(c)}
@@ -84,8 +84,8 @@ export default function ScaleBar({ sheet }: { sheet: SheetMeta }) {
   } else {
     content = (
       <>
-        <span className="font-medium text-amber-900">
-          ⚠ {!detection?.done || ocrBusy ? 'Looking for a scale…' : 'No scale set'}
+        <span className="font-medium text-accent-text">
+          {!detection?.done || ocrBusy ? 'Looking for a scale…' : 'No scale set'}
         </span>
         <span className="text-neutral-500">
           {ocrBusy
@@ -106,7 +106,7 @@ export default function ScaleBar({ sheet }: { sheet: SheetMeta }) {
   return (
     <div className="relative z-10 border-b border-neutral-300 bg-white">
       <div className="flex min-h-10 flex-wrap items-center gap-2 px-3 py-1.5 text-sm">
-        <span className="text-xs font-semibold tracking-wide text-neutral-500 uppercase">Scale</span>
+        <span className="section-label">Scale</span>
         {content}
       </div>
       {picking && (
@@ -155,7 +155,7 @@ function BarButton(props: { onClick: () => void; primary?: boolean; children: Re
       onClick={props.onClick}
       className={`rounded px-2.5 py-1 text-sm font-medium ${
         props.primary
-          ? 'bg-blue-600 text-white hover:bg-blue-700'
+          ? 'bg-accent text-graphite hover:bg-accent-hover'
           : 'border border-neutral-300 bg-white hover:bg-neutral-100'
       }`}
     >

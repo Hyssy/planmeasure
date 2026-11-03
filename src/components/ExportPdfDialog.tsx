@@ -29,21 +29,21 @@ export default function ExportPdfDialog({ onClose }: { onClose: () => void }) {
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/30" onMouseDown={(e) => e.target === e.currentTarget && !busy && onClose()}>
-      <div className="w-[26rem] rounded-lg bg-white p-4 text-sm shadow-xl" data-testid="export-pdf-dialog" onKeyDown={(e) => e.key === 'Escape' && !busy && onClose()}>
+      <div className="w-[26rem] rounded-lg border border-neutral-300 bg-white p-4 text-sm text-graphite" data-testid="export-pdf-dialog" onKeyDown={(e) => e.key === 'Escape' && !busy && onClose()}>
         <h2 className="text-base font-semibold">Export marked-up PDF</h2>
         <p className="mt-1 text-xs text-neutral-500">
           Shapes are drawn into the pages (flattened). The original drawings stay as sharp as before.
         </p>
 
         <fieldset className="mt-3">
-          <legend className="text-xs font-semibold tracking-wide text-neutral-500 uppercase">Pages</legend>
+          <legend className="section-label">Pages</legend>
           {choice('current', 'This page', current >= 0 ? sheetName(state.labels[state.selectedSheetId!], current) : 'No sheet selected')}
           {choice('marked', 'Marked-up pages only', `${markedCount} page${markedCount === 1 ? '' : 's'} with something drawn on them`)}
           {choice('all', 'Whole document', `All ${state.sheets.length} page${state.sheets.length === 1 ? '' : 's'}, in sheet-list order`)}
         </fieldset>
 
         <fieldset className="mt-3">
-          <legend className="text-xs font-semibold tracking-wide text-neutral-500 uppercase">Include</legend>
+          <legend className="section-label">Include</legend>
           <label className="flex items-center gap-2 p-1">
             <input type="checkbox" checked={opts.markups} onChange={(e) => setOpts({ ...opts, markups: e.target.checked })} /> Markups
           </label>
@@ -80,7 +80,7 @@ export default function ExportPdfDialog({ onClose }: { onClose: () => void }) {
                   setBusy(false)
                 }
               }}
-              className="rounded bg-blue-600 px-3 py-1.5 font-medium text-white hover:bg-blue-700 disabled:opacity-50"
+              className="rounded bg-accent px-3 py-1.5 font-medium text-graphite hover:bg-accent-hover disabled:opacity-50"
             >
               {busy ? 'Exporting…' : 'Export PDF'}
             </button>
