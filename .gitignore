@@ -29,3 +29,6 @@ test-plans/
 # pdf.js support files, copied from node_modules by scripts/copy-assets.mjs
 public/pdfjs/
 public/tesseract/
+
+# OCR language cache written by command-line tesseract runs
+*.traineddata
