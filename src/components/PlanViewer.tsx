@@ -1,9 +1,12 @@
-import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { renderPage, type RenderHandle, type SheetMeta } from '../lib/pdf'
 import { distancePt, formatLength, realMm, type Point } from '../lib/scale'
 import { describePaperSize } from '../lib/units'
 import { ACTUAL_SIZE_SCALE, fitView, screenToPage, zoomAt, type View } from '../lib/view'
-import { useApp } from '../store'
+import { distanceToPolyline, pointInPolygon } from '../lib/geometry'
+import { formatQuantity, ITEM_COLOURS, KIND_LABEL, takeoffQuantity, type Takeoff, type TakeoffKind } from '../lib/takeoff'
+import { isTakeoffTool, scaleInfo, useApp } from '../store'
+import TakeoffLayer, { type TakeoffDraft } from './TakeoffLayer'
 import CalibrateDialog from './CalibrateDialog'
 import MeasureOverlay, { type OverlayLine } from './MeasureOverlay'
 
@@ -191,8 +194,21 @@ export default function PlanViewer({ sheet }: Props) {
   const scale = useApp((s) => s.scales[sheet.id])
   const label = useApp((s) => s.labels[sheet.id])
   const setCalibratedScale = useApp((s) => s.setCalibratedScale)
+  const items = useApp((s) => s.items)
+  const allTakeoffs = useApp((s) => s.takeoffs)
+  const activeItemId = useApp((s) => s.activeItemId)
+  const selectedId = useApp((s) => s.selectedTakeoffId)
+  const addTakeoff = useApp((s) => s.addTakeoff)
+  const deleteTakeoff = useApp((s) => s.deleteTakeoff)
+  const selectTakeoff = useApp((s) => s.selectTakeoff)
 
-  /** Points placed so far for the line being drawn (calibrate or measure). */
+  const itemsById = useMemo(() => new Map(items.map((i) => [i.id, i])), [items])
+  const takeoffs = useMemo(() => allTakeoffs.filter((t) => t.sheetId === sheet.id), [allTakeoffs, sheet.id])
+  const activeItem = itemsById.get(activeItemId ?? '')
+  const drawItem = isTakeoffTool(tool) && activeItem?.kind === tool ? activeItem : undefined
+  const scaleForQty = scaleInfo(scale)
+
+  /** Points placed so far for the shape or line being drawn. */
   const [draft, setDraft] = useState<Point[]>([])
   /** Where the cursor is on the page (for the rubber-band line). */
   const [cursor, setCursor] = useState<Point | null>(null)
@@ -206,7 +222,7 @@ export default function PlanViewer({ sheet }: Props) {
     setCursor(null)
     setMeasured(null)
     setCalibLine(null)
-  }, [])
+  }, [setDraft, setCursor, setMeasured, setCalibLine])
 
   // Clear in-progress drawing when the sheet or tool changes.
   const drawingKey = `${sheet.id}|${tool}`
@@ -216,9 +232,40 @@ export default function PlanViewer({ sheet }: Props) {
     resetDrawing()
   }
 
-  // Space held = temporary pan; Esc cancels.
+  const isClosedTool = tool === 'area' || tool === 'perimeter'
+  const minPoints = isClosedTool ? 3 : 2
+
+  /** Finish the shape being drawn (Enter, double-click, or clicking the first point). */
+  const finishShape = (pts: Point[] = draft) => {
+    if (!isTakeoffTool(tool) || tool === 'count') return
+    if (pts.length >= minPoints) addTakeoff(sheet.id, tool, pts)
+    setDraft([])
+    setCursor(null)
+  }
+
+  // Space held = temporary pan; keyboard shortcuts for drawing.
   const spaceHeld = useRef(false)
   const [spaceDown, setSpaceDown] = useState(false)
+  const keyHandler = useRef<(e: KeyboardEvent) => void>(() => {})
+  const onKey = (e: KeyboardEvent) => {
+    if (e.key === 'Escape') {
+      if (draft.length || measured || calibLine) resetDrawing()
+      else selectTakeoff(null)
+    } else if (e.key === 'Enter' && draft.length) {
+      e.preventDefault()
+      finishShape()
+    } else if (e.key === 'Backspace' && draft.length) {
+      e.preventDefault()
+      setDraft((d) => d.slice(0, -1))
+    } else if ((e.key === 'Delete' || e.key === 'Backspace') && !draft.length && selectedId) {
+      e.preventDefault()
+      deleteTakeoff(selectedId)
+    }
+  }
+  // Keep the window listener pointing at the latest handler (it reads current drawing state).
+  useLayoutEffect(() => {
+    keyHandler.current = onKey
+  })
   useEffect(() => {
     const isTyping = (e: KeyboardEvent) =>
       e.target instanceof HTMLElement && /^(INPUT|TEXTAREA|SELECT)$/.test(e.target.tagName)
@@ -228,8 +275,8 @@ export default function PlanViewer({ sheet }: Props) {
         e.preventDefault()
         spaceHeld.current = true
         setSpaceDown(true)
-      } else if (e.key === 'Escape') {
-        resetDrawing()
+      } else {
+        keyHandler.current(e)
       }
     }
     const up = (e: KeyboardEvent) => {
@@ -244,7 +291,7 @@ export default function PlanViewer({ sheet }: Props) {
       window.removeEventListener('keydown', down)
       window.removeEventListener('keyup', up)
     }
-  }, [resetDrawing])
+  }, [])
 
   /** Page point under the mouse. Shift locks the line horizontal or vertical. */
   const pagePointFromEvent = (e: React.PointerEvent | React.MouseEvent, from?: Point): Point => {
@@ -256,6 +303,28 @@ export default function PlanViewer({ sheet }: Props) {
         : { x: from.x, y: p.y }
     }
     return p
+  }
+
+  /** The topmost shape under a page point, if any. */
+  const hitTest = (p: Point): string | null => {
+    const v = viewRef.current
+    if (!v) return null
+    const tol = 8 / v.scale
+    for (let i = takeoffs.length - 1; i >= 0; i--) {
+      const t = takeoffs[i]
+      const kind = itemsById.get(t.itemId)?.kind
+      if (kind === 'count') {
+        if (distancePt(p, t.points[0]) <= 10 / v.scale) return t.id
+      } else if (kind === 'linear') {
+        if (distanceToPolyline(p, t.points) <= tol) return t.id
+      } else if (kind === 'perimeter') {
+        if (distanceToPolyline(p, t.points, true) <= tol) return t.id
+      } else if (kind === 'area') {
+        if (distanceToPolyline(p, t.points, true) <= tol) return t.id
+        if (pointInPolygon(p, t.points) && !t.holes.some((h) => pointInPolygon(p, h))) return t.id
+      }
+    }
+    return null
   }
 
   // ---- Panning: Pan tool left-drag, middle-drag, or Space+drag ----
@@ -275,9 +344,31 @@ export default function PlanViewer({ sheet }: Props) {
     if (e.button !== 0) return
     // Stop the browser moving focus, so the calibration box keeps the cursor.
     e.preventDefault()
+    const last = draft[draft.length - 1]
+    const p = pagePointFromEvent(e, last)
+
+    if (tool === 'select') {
+      selectTakeoff(hitTest(p))
+      return
+    }
+
+    if (tool === 'count') {
+      addTakeoff(sheet.id, 'count', [p])
+      return
+    }
+
+    if (tool === 'linear' || tool === 'area' || tool === 'perimeter') {
+      // Clicking the first point closes an area or perimeter.
+      if (isClosedTool && draft.length >= 3 && distancePt(p, draft[0]) * view.scale < 10) {
+        finishShape()
+        return
+      }
+      if (last && distancePt(p, last) < 0.5) return // second click of a double-click
+      setDraft([...draft, p])
+      return
+    }
 
     // Calibrate / Measure: click the start point, then the end point.
-    const p = pagePointFromEvent(e, draft[0])
     if (draft.length === 0) {
       setMeasured(null)
       setDraft([p])
@@ -289,14 +380,17 @@ export default function PlanViewer({ sheet }: Props) {
     if (tool === 'calibrate') setCalibLine(line)
     else setMeasured(line)
   }
+  const onDoubleClick = () => {
+    if (tool === 'linear' || tool === 'area' || tool === 'perimeter') finishShape()
+  }
   const onPointerMove = (e: React.PointerEvent) => {
     const d = drag.current
     if (d && d.id === e.pointerId) {
       setView({ ...d.view, x: d.view.x + e.clientX - d.sx, y: d.view.y + e.clientY - d.sy })
       return
     }
-    if (tool !== 'pan' && draft.length > 0 && viewRef.current) {
-      setCursor(pagePointFromEvent(e, draft[0]))
+    if (tool !== 'pan' && tool !== 'select' && draft.length > 0 && viewRef.current) {
+      setCursor(pagePointFromEvent(e, draft[draft.length - 1]))
     }
   }
   const endDrag = (e: React.PointerEvent) => {
@@ -313,15 +407,16 @@ export default function PlanViewer({ sheet }: Props) {
     return scale.status === 'confirmed' ? text : `${text} (unverified)`
   }
   const overlayLines: OverlayLine[] = []
+  const measuring = tool === 'calibrate' || tool === 'measure'
   const toolColour = tool === 'calibrate' ? '#c2410c' : '#1d4ed8'
-  if (draft.length === 1 && cursor) {
+  if (measuring && draft.length === 1 && cursor) {
     overlayLines.push({
       points: [draft[0], cursor],
       colour: toolColour,
       dashed: true,
       label: tool === 'measure' ? lengthLabel(draft[0], cursor) : undefined,
     })
-  } else if (draft.length === 1) {
+  } else if (measuring && draft.length === 1) {
     overlayLines.push({ points: draft, colour: toolColour })
   }
   if (measured) {
@@ -329,11 +424,58 @@ export default function PlanViewer({ sheet }: Props) {
   }
   if (calibLine) overlayLines.push({ points: calibLine, colour: '#c2410c' })
 
+  const qtyText = (t: Takeoff | { points: Point[]; holes: Point[][] }, kind: TakeoffKind) => {
+    const q = takeoffQuantity({ id: '', itemId: '', sheetId: '', ...t }, kind, scaleForQty)
+    if (q.value === null) return 'No scale'
+    const text = formatQuantity(q.value, kind) + (kind === 'count' ? ' counted' : '')
+    return q.state === 'unverified' && kind !== 'count' ? `${text} (unverified)` : text
+  }
+  const takeoffDraft: TakeoffDraft | null =
+    isTakeoffTool(tool) && tool !== 'count' && draft.length > 0
+      ? {
+          kind: tool,
+          colour: drawItem?.colour ?? ITEM_COLOURS[items.length % ITEM_COLOURS.length],
+          points: draft,
+          cursor,
+          label: qtyText({ points: cursor ? [...draft, cursor] : draft, holes: [] }, tool),
+        }
+      : null
+  const selected = takeoffs.find((t) => t.id === selectedId)
+  const selectedKind = selected ? itemsById.get(selected.itemId)?.kind : undefined
+  const selectedLabel = selected && selectedKind ? qtyText(selected, selectedKind) : undefined
+
   const cursorClass = dragging
     ? 'cursor-grabbing'
     : tool === 'pan' || spaceDown
       ? 'cursor-grab'
-      : 'cursor-crosshair'
+      : tool === 'select'
+        ? 'cursor-default'
+        : 'cursor-crosshair'
+
+  const itemName = drawItem ? `“${drawItem.name}”` : 'a new item'
+  const hint =
+    tool === 'pan'
+      ? null
+      : tool === 'select'
+        ? selected
+          ? 'Selected · Delete to remove · Esc to deselect'
+          : 'Select: click a shape'
+        : tool === 'calibrate'
+          ? draft.length === 0
+            ? 'Calibrate: click one end of a dimension you know'
+            : 'Now click the other end (hold Shift for straight)'
+          : tool === 'measure'
+            ? draft.length === 0
+              ? 'Measure: click the start point'
+              : 'Click the end point (hold Shift for straight)'
+            : tool === 'count'
+              ? `Count into ${itemName}: click each one`
+              : draft.length === 0
+                ? `${KIND_LABEL[tool]} into ${itemName}: click the first point`
+                : isClosedTool
+                  ? 'Click to add corners · click the first point or press Enter to close · Backspace removes a point'
+                  : 'Click to add points · Enter or double-click to finish · Backspace removes a point'
+  const noScaleWarning = isTakeoffTool(tool) && tool !== 'count' && !scale
 
   // ---- Zoom buttons ----
   const zoomCentre = (factor: number) => {
@@ -357,6 +499,7 @@ export default function PlanViewer({ sheet }: Props) {
       onPointerMove={onPointerMove}
       onPointerUp={endDrag}
       onPointerCancel={endDrag}
+      onDoubleClick={onDoubleClick}
       onAuxClick={(e) => e.preventDefault()}
     >
       <canvas
@@ -371,19 +514,30 @@ export default function PlanViewer({ sheet }: Props) {
       />
 
       {view && boxSize.w > 0 && (
-        <MeasureOverlay width={boxSize.w} height={boxSize.h} view={view} lines={overlayLines} />
+        <MeasureOverlay width={boxSize.w} height={boxSize.h} view={view} lines={overlayLines}>
+          <TakeoffLayer
+            scale={view.scale}
+            takeoffs={takeoffs}
+            items={itemsById}
+            selectedId={selectedId}
+            selectedLabel={selectedLabel}
+            draft={takeoffDraft}
+          />
+        </MeasureOverlay>
       )}
 
-      {tool !== 'pan' && !calibLine && (
-        <div className="pointer-events-none absolute top-3 left-1/2 -translate-x-1/2 rounded bg-black/70 px-3 py-1.5 text-sm text-white">
-          {tool === 'calibrate'
-            ? draft.length === 0
-              ? 'Calibrate: click one end of a dimension you know'
-              : 'Now click the other end (hold Shift for straight)'
-            : draft.length === 0
-              ? 'Measure: click the start point'
-              : 'Click the end point (hold Shift for straight)'}
+      {hint && !calibLine && (
+        <div
+          data-testid="tool-hint"
+          className="pointer-events-none absolute top-3 left-1/2 max-w-[90%] -translate-x-1/2 rounded bg-black/70 px-3 py-1.5 text-center text-sm text-white"
+        >
+          {hint}
           <span className="text-white/60"> · Space+drag to pan · Esc to cancel</span>
+          {noScaleWarning && (
+            <div className="mt-1 text-amber-300">
+              ⚠ No scale on this sheet — these shapes won’t count in totals until you calibrate.
+            </div>
+          )}
         </div>
       )}
 

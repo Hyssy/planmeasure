@@ -1,10 +1,21 @@
 import { useRef } from 'react'
 import { useApp, type Tool } from '../store'
 
-const TOOLS: { id: Tool; label: string; key: string; hint: string }[] = [
-  { id: 'pan', label: 'Pan', key: 'H', hint: 'Drag to move around the plan' },
-  { id: 'calibrate', label: 'Calibrate', key: 'C', hint: 'Set the scale from a dimension you know' },
-  { id: 'measure', label: 'Measure', key: 'M', hint: 'Measure a distance' },
+const TOOL_GROUPS: { id: Tool; label: string; key: string; hint: string }[][] = [
+  [
+    { id: 'select', label: 'Select', key: 'V', hint: 'Select, change or delete shapes' },
+    { id: 'pan', label: 'Pan', key: 'H', hint: 'Drag to move around the plan' },
+  ],
+  [
+    { id: 'calibrate', label: 'Calibrate', key: 'C', hint: 'Set the scale from a dimension you know' },
+    { id: 'measure', label: 'Measure', key: 'M', hint: 'Measure a distance (not saved)' },
+  ],
+  [
+    { id: 'linear', label: 'Linear', key: 'L', hint: 'Take off lengths: walls, skirting, pipes' },
+    { id: 'area', label: 'Area', key: 'A', hint: 'Take off areas: floors, ceilings' },
+    { id: 'perimeter', label: 'Perimeter', key: 'P', hint: 'Take off the edge length of a room' },
+    { id: 'count', label: 'Count', key: 'N', hint: 'Count items: lights, doors, fixtures' },
+  ],
 ]
 
 export default function Toolbar() {
@@ -39,25 +50,49 @@ export default function Toolbar() {
         }}
       />
       <div className="h-6 w-px bg-neutral-200" />
-      <div className="flex gap-1" role="toolbar" aria-label="Tools">
-        {TOOLS.map((t) => (
-          <button
-            key={t.id}
-            disabled={!hasSheets}
-            onClick={() => setTool(t.id)}
-            title={`${t.hint} (${t.key})`}
-            aria-pressed={tool === t.id}
-            className={`rounded-md px-3 py-1.5 text-sm font-medium disabled:opacity-40 ${
-              tool === t.id ? 'bg-neutral-800 text-white' : 'hover:bg-neutral-100'
-            }`}
-          >
-            {t.label}
-          </button>
+      <div className="flex items-center gap-1" role="toolbar" aria-label="Tools">
+        {TOOL_GROUPS.map((group, g) => (
+          <div key={g} className="flex items-center gap-1">
+            {g > 0 && <div className="mx-1 h-6 w-px bg-neutral-200" />}
+            {group.map((t) => (
+              <button
+                key={t.id}
+                disabled={!hasSheets}
+                onClick={() => setTool(t.id)}
+                title={`${t.hint} (${t.key})`}
+                aria-pressed={tool === t.id}
+                className={`rounded-md px-2.5 py-1.5 text-sm font-medium disabled:opacity-40 ${
+                  tool === t.id ? 'bg-neutral-800 text-white' : 'hover:bg-neutral-100'
+                }`}
+              >
+                {t.label}
+              </button>
+            ))}
+          </div>
         ))}
+        <div className="mx-1 h-6 w-px bg-neutral-200" />
+        <UndoRedo />
       </div>
-      <span className="ml-auto text-xs text-neutral-500">
+      <span className="ml-auto hidden text-xs text-neutral-500 xl:inline">
         Scroll to zoom · Space+drag to pan · files stay on your computer
       </span>
     </header>
+  )
+}
+
+function UndoRedo() {
+  const canUndo = useApp((s) => s.past.length > 0)
+  const canRedo = useApp((s) => s.future.length > 0)
+  const undo = useApp((s) => s.undo)
+  const redo = useApp((s) => s.redo)
+  return (
+    <>
+      <button onClick={undo} disabled={!canUndo} title="Undo (Ctrl+Z)" className="rounded-md px-2 py-1.5 text-sm hover:bg-neutral-100 disabled:opacity-40">
+        Undo
+      </button>
+      <button onClick={redo} disabled={!canRedo} title="Redo (Ctrl+Y)" className="rounded-md px-2 py-1.5 text-sm hover:bg-neutral-100 disabled:opacity-40">
+        Redo
+      </button>
+    </>
   )
 }

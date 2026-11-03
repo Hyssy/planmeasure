@@ -1,9 +1,14 @@
 import { useEffect, useState } from 'react'
+import ItemsPanel from './components/ItemsPanel'
 import PlanViewer from './components/PlanViewer'
 import ScaleBar from './components/ScaleBar'
 import SheetList from './components/SheetList'
 import Toolbar from './components/Toolbar'
-import { useApp } from './store'
+import { useApp, type Tool } from './store'
+
+const TOOL_KEYS: Record<string, Tool> = {
+  v: 'select', h: 'pan', c: 'calibrate', m: 'measure', l: 'linear', a: 'area', p: 'perimeter', n: 'count',
+}
 
 export default function App() {
   const sheets = useApp((s) => s.sheets)
@@ -15,14 +20,24 @@ export default function App() {
   const selected = sheets.find((s) => s.id === selectedId) ?? null
   const [dragOver, setDragOver] = useState(false)
 
-  // Tool shortcuts: H = Pan, C = Calibrate, M = Measure.
+  // Shortcuts: tools by letter; Ctrl+Z undo, Ctrl+Y / Ctrl+Shift+Z redo.
   const setTool = useApp((s) => s.setTool)
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      if (e.ctrlKey || e.metaKey || e.altKey) return
       if (e.target instanceof HTMLElement && /^(INPUT|TEXTAREA|SELECT)$/.test(e.target.tagName)) return
-      if (!useApp.getState().sheets.length) return
-      const tool = ({ h: 'pan', c: 'calibrate', m: 'measure' } as const)[e.key.toLowerCase()]
+      const key = e.key.toLowerCase()
+      if (e.ctrlKey || e.metaKey) {
+        if (key === 'z' && !e.shiftKey) {
+          e.preventDefault()
+          useApp.getState().undo()
+        } else if (key === 'y' || (key === 'z' && e.shiftKey)) {
+          e.preventDefault()
+          useApp.getState().redo()
+        }
+        return
+      }
+      if (e.altKey || !useApp.getState().sheets.length) return
+      const tool = TOOL_KEYS[key]
       if (tool) setTool(tool)
     }
     window.addEventListener('keydown', onKey)
@@ -79,12 +94,7 @@ export default function App() {
             </div>
           )}
         </main>
-        <aside className="w-64 shrink-0 border-l border-neutral-300 bg-white">
-          <div className="border-b border-neutral-200 px-3 py-2 text-xs font-semibold tracking-wide text-neutral-500 uppercase">
-            Items & quantities
-          </div>
-          <p className="p-3 text-sm text-neutral-400">Takeoff items will appear here (Phase 4).</p>
-        </aside>
+        <ItemsPanel />
       </div>
 
       {dragOver && (

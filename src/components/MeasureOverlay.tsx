@@ -14,6 +14,8 @@ interface Props {
   height: number
   view: View
   lines: OverlayLine[]
+  /** extra shapes drawn in page coordinates, under the measure lines */
+  children?: React.ReactNode
 }
 
 /**
@@ -21,11 +23,12 @@ interface Props {
  * is moved and scaled by the view, so they stay locked to the drawing at any zoom.
  * Line widths, handles and labels stay the same size on screen.
  */
-export default function MeasureOverlay({ width, height, view, lines }: Props) {
+export default function MeasureOverlay({ width, height, view, lines, children }: Props) {
   const s = view.scale
   return (
     <Stage width={width} height={height} listening={false} className="pointer-events-none absolute inset-0">
       <Layer x={view.x} y={view.y} scaleX={s} scaleY={s} listening={false}>
+        {children}
         {lines.map((line, i) => {
           const flat = line.points.flatMap((p) => [p.x, p.y])
           const last = line.points[line.points.length - 1]

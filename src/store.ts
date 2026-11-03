@@ -12,8 +12,26 @@ import {
   type ScaleCandidate,
 } from './lib/scale'
 import { detectSheetLabel } from './lib/sheetLabel'
+import { ITEM_COLOURS, KIND_LABEL, type Item, type SheetScaleInfo, type Takeoff, type TakeoffKind } from './lib/takeoff'
 
-export type Tool = 'pan' | 'calibrate' | 'measure'
+
+export type Tool = 'select' | 'pan' | 'calibrate' | 'measure' | TakeoffKind
+
+export const TAKEOFF_TOOLS: TakeoffKind[] = ['linear', 'area', 'perimeter', 'count']
+
+export function isTakeoffTool(tool: Tool): tool is TakeoffKind {
+  return (TAKEOFF_TOOLS as Tool[]).includes(tool)
+}
+
+/** Undo/redo keeps copies of the takeoff data. */
+interface Snapshot {
+  items: Item[]
+  takeoffs: Takeoff[]
+}
+const HISTORY_LIMIT = 200
+
+let nextId = 1
+const newId = (prefix: string) => `${prefix}${Date.now().toString(36)}${(nextId++).toString(36)}`
 
 /**
  * A sheet's scale.
@@ -77,6 +95,36 @@ interface AppState {
   confirmScale: (sheetId: string) => void
   clearScale: (sheetId: string) => void
   setLabel: (sheetId: string, number: string, title: string) => void
+
+  // ---- Takeoff ----
+  items: Item[]
+  takeoffs: Takeoff[]
+  /** the item new shapes are added to */
+  activeItemId: string | null
+  selectedTakeoffId: string | null
+  past: Snapshot[]
+  future: Snapshot[]
+
+  addItem: (kind: TakeoffKind, fields?: Partial<Pick<Item, 'name' | 'colour' | 'trade'>>) => string
+  updateItem: (id: string, patch: Partial<Omit<Item, 'id' | 'kind'>>) => void
+  deleteItem: (id: string) => void
+  /** Make an item active and switch to its drawing tool. */
+  activateItem: (id: string) => void
+  /** Add a finished shape to the active item (creating an item if needed). Returns its id. */
+  addTakeoff: (sheetId: string, kind: TakeoffKind, points: Takeoff['points']) => string
+  updateTakeoff: (id: string, patch: Partial<Pick<Takeoff, 'points' | 'holes' | 'itemId'>>, recordUndo?: boolean) => void
+  deleteTakeoff: (id: string) => void
+  selectTakeoff: (id: string | null) => void
+  /** Save the current state for undo (call once before a drag that updates without recording). */
+  checkpoint: () => void
+  undo: () => void
+  redo: () => void
+}
+
+/** The sheet's scale in the form quantity maths needs. */
+export function scaleInfo(scale: SheetScale | undefined): SheetScaleInfo | undefined {
+  if (!scale) return undefined
+  return { realMmPerPt: scale.realMmPerPt, state: scale.status === 'confirmed' ? 'confirmed' : 'unverified' }
 }
 
 /** Scale for a 1:ratio drawing printed at its intended size on this page. */
@@ -113,6 +161,23 @@ function applyTextResults(
   return { detections, labels }
 }
 
+function snap(s: AppState): Snapshot {
+  return { items: s.items, takeoffs: s.takeoffs }
+}
+
+/** Push the current takeoff data onto the undo stack (and clear redo). */
+function record(s: AppState): Pick<AppState, 'past' | 'future'> {
+  return { past: [...s.past, snap(s)].slice(-HISTORY_LIMIT), future: [] }
+}
+
+/** After undo/redo, drop selections that point at things that no longer exist. */
+function keepValidRefs(s: AppState, next: Snapshot): Partial<AppState> {
+  return {
+    activeItemId: next.items.some((i) => i.id === s.activeItemId) ? s.activeItemId : null,
+    selectedTakeoffId: next.takeoffs.some((t) => t.id === s.selectedTakeoffId) ? s.selectedTakeoffId : null,
+  }
+}
+
 function withOcrStatus(s: AppState, sheetId: string, ocr: ScaleDetection['ocr']): Partial<AppState> {
   const d = s.detections[sheetId]
   return d ? { detections: { ...s.detections, [sheetId]: { ...d, ocr } } } : {}
@@ -125,6 +190,12 @@ export const useApp = create<AppState>((set) => ({
   scales: {},
   detections: {},
   labels: {},
+  items: [],
+  takeoffs: [],
+  activeItemId: null,
+  selectedTakeoffId: null,
+  past: [],
+  future: [],
   loading: false,
   errors: [],
   tool: 'pan',
@@ -194,7 +265,15 @@ export const useApp = create<AppState>((set) => ({
 
   selectSheet: (id) => set({ selectedSheetId: id }),
   dismissErrors: () => set({ errors: [] }),
-  setTool: (tool) => set({ tool }),
+  setTool: (tool) =>
+    set((s) => {
+      // Switching to a takeoff tool: keep the active item if it matches, else use the latest of that kind.
+      if (!isTakeoffTool(tool)) return { tool }
+      const active = s.items.find((i) => i.id === s.activeItemId)
+      if (active?.kind === tool) return { tool, selectedTakeoffId: null }
+      const latest = [...s.items].reverse().find((i) => i.kind === tool)
+      return { tool, activeItemId: latest?.id ?? null, selectedTakeoffId: null }
+    }),
 
   setRatioScale: (sheetId, c, source) => {
     const scale: SheetScale = { ...ratioScale(c), status: 'confirmed', source }
@@ -219,6 +298,88 @@ export const useApp = create<AppState>((set) => ({
     }),
 
   clearScale: (sheetId) => set((s) => ({ scales: { ...s.scales, [sheetId]: undefined } })),
+
+  addItem: (kind, fields = {}) => {
+    const id = newId('i')
+    set((s) => {
+      const sameKind = s.items.filter((i) => i.kind === kind).length
+      const item: Item = {
+        id,
+        kind,
+        name: fields.name ?? `${KIND_LABEL[kind]} ${sameKind + 1}`,
+        colour: fields.colour ?? ITEM_COLOURS[s.items.length % ITEM_COLOURS.length],
+        trade: fields.trade ?? '',
+      }
+      return { ...record(s), items: [...s.items, item], activeItemId: id }
+    })
+    return id
+  },
+
+  updateItem: (id, patch) =>
+    set((s) => ({ ...record(s), items: s.items.map((i) => (i.id === id ? { ...i, ...patch } : i)) })),
+
+  deleteItem: (id) =>
+    set((s) => ({
+      ...record(s),
+      items: s.items.filter((i) => i.id !== id),
+      takeoffs: s.takeoffs.filter((t) => t.itemId !== id),
+      activeItemId: s.activeItemId === id ? null : s.activeItemId,
+      selectedTakeoffId: s.takeoffs.some((t) => t.id === s.selectedTakeoffId && t.itemId === id) ? null : s.selectedTakeoffId,
+    })),
+
+  activateItem: (id) =>
+    set((s) => {
+      const item = s.items.find((i) => i.id === id)
+      return item ? { activeItemId: id, tool: item.kind, selectedTakeoffId: null } : {}
+    }),
+
+  addTakeoff: (sheetId, kind, points) => {
+    const id = newId('t')
+    set((s) => {
+      let items = s.items
+      let itemId = s.activeItemId
+      if (!items.find((i) => i.id === itemId && i.kind === kind)) {
+        // No suitable item yet: make one.
+        itemId = newId('i')
+        const sameKind = items.filter((i) => i.kind === kind).length
+        items = [...items, { id: itemId, kind, name: `${KIND_LABEL[kind]} ${sameKind + 1}`, colour: ITEM_COLOURS[items.length % ITEM_COLOURS.length], trade: '' }]
+      }
+      const takeoff: Takeoff = { id, itemId: itemId!, sheetId, points, holes: [] }
+      return { ...record(s), items, activeItemId: itemId, takeoffs: [...s.takeoffs, takeoff] }
+    })
+    return id
+  },
+
+  updateTakeoff: (id, patch, recordUndo = true) =>
+    set((s) => ({
+      ...(recordUndo ? record(s) : {}),
+      takeoffs: s.takeoffs.map((t) => (t.id === id ? { ...t, ...patch } : t)),
+    })),
+
+  deleteTakeoff: (id) =>
+    set((s) => ({
+      ...record(s),
+      takeoffs: s.takeoffs.filter((t) => t.id !== id),
+      selectedTakeoffId: s.selectedTakeoffId === id ? null : s.selectedTakeoffId,
+    })),
+
+  selectTakeoff: (id) => set({ selectedTakeoffId: id }),
+
+  checkpoint: () => set((s) => record(s)),
+
+  undo: () =>
+    set((s) => {
+      const prev = s.past[s.past.length - 1]
+      if (!prev) return {}
+      return { ...prev, ...keepValidRefs(s, prev), past: s.past.slice(0, -1), future: [...s.future, snap(s)] }
+    }),
+
+  redo: () =>
+    set((s) => {
+      const next = s.future[s.future.length - 1]
+      if (!next) return {}
+      return { ...next, ...keepValidRefs(s, next), future: s.future.slice(0, -1), past: [...s.past, snap(s)] }
+    }),
 
   setLabel: (sheetId, number, title) =>
     set((s) => ({
