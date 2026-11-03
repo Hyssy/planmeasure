@@ -2,10 +2,12 @@ import { useState } from 'react'
 import { COMMON_RATIOS, describeCandidate } from '../lib/scale'
 import { paperSizeFromPt } from '../lib/units'
 import type { SheetMeta } from '../lib/pdf'
+import { usePanels } from '../panels'
 import { useApp } from '../store'
 
 /** Shows and sets the current sheet's scale, above the plan. */
 export default function ScaleBar({ sheet }: { sheet: SheetMeta }) {
+  const setPanel = usePanels((s) => s.setPanel)
   const scale = useApp((s) => s.scales[sheet.id])
   const detection = useApp((s) => s.detections[sheet.id])
   const setTool = useApp((s) => s.setTool)
@@ -108,6 +110,15 @@ export default function ScaleBar({ sheet }: { sheet: SheetMeta }) {
       <div className="flex min-h-10 flex-wrap items-center gap-2 px-3 py-1.5 text-sm">
         <span className="section-label">Scale</span>
         {content}
+        <button
+          onClick={() => setPanel('scaleBar', false)}
+          data-testid="hide-scale-bar"
+          title="Hide the scale bar (the scale still shows at the bottom of the plan)"
+          aria-label="Hide the scale bar"
+          className="rounded px-1.5 text-base leading-none text-neutral-500 hover:bg-neutral-100 hover:text-graphite"
+        >
+          ˄
+        </button>
       </div>
       {picking && (
         <ScalePicker

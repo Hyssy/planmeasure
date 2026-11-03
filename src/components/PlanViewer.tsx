@@ -5,6 +5,7 @@ import { describePaperSize } from '../lib/units'
 import { ACTUAL_SIZE_SCALE, fitView, screenToPage, zoomAt, type View } from '../lib/view'
 import { distanceToPolyline, pointInPolygon, polygonAreaPt2, rectCorners, simplifyPath } from '../lib/geometry'
 import { formatQuantity, ITEM_COLOURS, KIND_LABEL, takeoffQuantity, type Takeoff, type TakeoffKind } from '../lib/takeoff'
+import { isFocused, usePanels } from '../panels'
 import { isTakeoffTool, scaleInfo, useApp, type DrawStyle } from '../store'
 import TakeoffLayer, { type TakeoffDraft } from './TakeoffLayer'
 import MarkupLayer from './MarkupLayer'
@@ -163,10 +164,14 @@ export default function PlanViewer({ sheet }: Props) {
   useEffect(() => {
     const el = boxRef.current
     if (!el) return
+    let last = { w: el.clientWidth, h: el.clientHeight }
     const ro = new ResizeObserver(() => {
-      setBoxSize({ w: el.clientWidth, h: el.clientHeight })
+      const size = { w: el.clientWidth, h: el.clientHeight }
+      setBoxSize(size)
       const v = viewRef.current
-      if (v) setView({ ...v })
+      // Panels opening or closing: shift by half the change so the plan stays centred.
+      if (v) setView({ ...v, x: v.x + (size.w - last.w) / 2, y: v.y + (size.h - last.h) / 2 })
+      last = size
     })
     ro.observe(el)
     return () => ro.disconnect()
@@ -218,6 +223,7 @@ export default function PlanViewer({ sheet }: Props) {
   const deleteMarkup = useApp((s) => s.deleteMarkup)
   const selectMarkup = useApp((s) => s.selectMarkup)
   const showTakeoffs = useApp((s) => s.showTakeoffs)
+  const scaleBarOpen = usePanels((s) => s.open.scaleBar)
   const labelAreas = useApp((s) => s.labelAreas)
   const areaField = useApp((s) => s.areaField)
   const setLabelArea = useApp((s) => s.setLabelArea)
@@ -948,6 +954,8 @@ export default function PlanViewer({ sheet }: Props) {
         />
       )}
 
+      <ViewControls />
+
       <div
         className="absolute right-3 bottom-3 flex items-center gap-1 rounded-lg bg-white/95 p-1 text-sm"
         onPointerDown={(e) => e.stopPropagation()}
@@ -971,6 +979,12 @@ export default function PlanViewer({ sheet }: Props) {
         {label?.title && <> {label.title}</>}
         {(label?.number || label?.title) && ' · '}
         {sheet.fileName} p{sheet.pageNumber} · {describePaperSize(sheet.widthPt, sheet.heightPt)}
+        {!scaleBarOpen && (
+          <span data-testid="info-scale" className={scale?.status === 'confirmed' ? '' : 'text-signal-orange-3'}>
+            {' · Scale '}
+            {scale ? `${scale.source === 'calibrated' ? 'calibrated' : scale.label.split(' (')[0]}${scale.status === 'confirmed' ? ' ✓' : ' (verify)'}` : 'not set'}
+          </span>
+        )}
       </div>
 
       {measured && (
@@ -1055,5 +1069,46 @@ function TextEditor(props: {
         width: Math.max(160, Math.max(...props.value.split('\n').map((l) => l.length)) * props.fontSize * 0.6 + 24),
       }}
     />
+  )
+}
+
+/** Top-right of the plan: Focus (hide all panels) and browser Full screen. */
+function ViewControls() {
+  const focused = usePanels((s) => isFocused(s.open))
+  const toggleFocus = usePanels((s) => s.toggleFocus)
+  const [fullScreen, setFullScreen] = useState(() => typeof document !== 'undefined' && !!document.fullscreenElement)
+  useEffect(() => {
+    const onChange = () => setFullScreen(!!document.fullscreenElement)
+    document.addEventListener('fullscreenchange', onChange)
+    return () => document.removeEventListener('fullscreenchange', onChange)
+  }, [])
+  const canFullScreen = typeof document !== 'undefined' && document.fullscreenEnabled
+  const btn = 'rounded px-2 py-1 whitespace-nowrap hover:bg-neutral-100'
+  return (
+    <div
+      className="absolute top-3 right-3 z-10 flex items-center gap-1 rounded-lg border border-neutral-300 bg-white/95 p-1 text-sm"
+      onPointerDown={(e) => e.stopPropagation()}
+      data-testid="view-controls"
+    >
+      <button
+        onClick={toggleFocus}
+        className={`${btn} ${focused ? 'bg-accent text-graphite hover:bg-accent-hover' : ''}`}
+        title={focused ? 'Show the panels again (F)' : 'Hide the side panels and scale bar so the plan fills the screen (F)'}
+        data-testid="focus-button"
+        aria-pressed={focused}
+      >
+        {focused ? 'Show panels' : 'Focus'}
+      </button>
+      {canFullScreen && (
+        <button
+          onClick={() => (fullScreen ? document.exitFullscreen() : document.documentElement.requestFullscreen()).catch(() => {})}
+          className={btn}
+          title={fullScreen ? 'Leave full screen (Esc)' : 'Full screen: also hide the browser’s tabs and address bar'}
+          data-testid="fullscreen-button"
+        >
+          {fullScreen ? 'Exit full screen' : 'Full screen'}
+        </button>
+      )}
+    </div>
   )
 }

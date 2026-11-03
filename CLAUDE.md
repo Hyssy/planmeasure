@@ -73,6 +73,7 @@ A browser-based PDF takeoff and markup tool for construction plans (architectura
 - Top: tool bar (Select, Pan, Calibrate, Linear, Area, Count, Markup tools).
 - Right: Items/quantities panel.
 - Keyboard shortcuts: Esc cancels, Enter finishes a shape, Ctrl+Z / Ctrl+Y undo/redo, Space+drag pans.
+- **Collapsible panels** (added by Jordan): the sheet list, items panel and scale bar each collapse (‹ › ˄), leaving a thin labelled strip to reopen them. **Focus** (button top-right of the plan, or **F**) hides all three and slims the header to one row; pressing again restores the previous layout. **Full screen** uses the browser's full-screen mode. The plan stays centred as panels change; the scale shows in the bottom info bar while the scale bar is hidden. Panel choices are remembered in the browser (not in the project).
 
 ## Build plan (do one phase at a time)
 1. **Setup + viewer**: scaffold the project, load PDFs, render pages, zoom/pan, sheet thumbnails.

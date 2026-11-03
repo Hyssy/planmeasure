@@ -1,9 +1,13 @@
 import { useState } from 'react'
+import { usePanels } from '../panels'
+import CollapsedRail, { CollapseButton } from './CollapsedRail'
 import type { SheetMeta } from '../lib/pdf'
 import { paperSizeFromPt } from '../lib/units'
 import { sheetName, useApp, type SheetLabel, type SheetScale } from '../store'
 
 export default function SheetList() {
+  const open = usePanels((s) => s.open.sheets)
+  const setPanel = usePanels((s) => s.setPanel)
   const sheets = useApp((s) => s.sheets)
   const labels = useApp((s) => s.labels)
   const labelAreas = useApp((s) => s.labelAreas)
@@ -19,10 +23,15 @@ export default function SheetList() {
       })
     : sheets
 
+  if (!open) return <CollapsedRail side="left" label={`Sheets${sheets.length ? ` (${sheets.length})` : ''}`} onOpen={() => setPanel('sheets', true)} testId="open-sheets" />
+
   return (
-    <aside className="flex w-60 shrink-0 flex-col border-r border-neutral-300 bg-white">
-      <div className="border-b border-neutral-200 px-3 py-2 section-label">
-        Sheets {sheets.length > 0 && <span className="font-normal">({sheets.length})</span>}
+    <aside className="flex w-60 shrink-0 flex-col border-r border-neutral-300 bg-white" data-testid="sheet-panel">
+      <div className="flex items-center justify-between border-b border-neutral-200 px-3 py-2">
+        <span className="section-label">
+          Sheets {sheets.length > 0 && <span className="font-normal">({sheets.length})</span>}
+        </span>
+        <CollapseButton side="left" label="Sheet list" onClick={() => setPanel('sheets', false)} testId="hide-sheets" />
       </div>
       {sheets.length > 0 && (
         <div className="border-b border-neutral-200 px-2 py-1.5">

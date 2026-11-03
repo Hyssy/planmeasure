@@ -1,4 +1,6 @@
 import { useMemo, useState } from 'react'
+import { usePanels } from '../panels'
+import CollapsedRail, { CollapseButton } from './CollapsedRail'
 import {
   formatQuantity,
   grossAreaM2,
@@ -20,6 +22,8 @@ type Scope = 'sheet' | 'project'
 
 /** Right-hand panel: takeoff items with running totals. */
 export default function ItemsPanel() {
+  const panelOpen = usePanels((s) => s.open.items)
+  const setPanel = usePanels((s) => s.setPanel)
   const items = useApp((s) => s.items)
   const takeoffs = useApp((s) => s.takeoffs)
   const scales = useApp((s) => s.scales)
@@ -42,10 +46,13 @@ export default function ItemsPanel() {
     return sheetName(labels[id], i)
   }
 
+  if (!panelOpen) return <CollapsedRail side="right" label="Items & quantities" onOpen={() => setPanel('items', true)} testId="open-items" />
+
   return (
-    <aside className="flex w-72 shrink-0 flex-col border-l border-neutral-300 bg-white">
-      <div className="flex items-center justify-between border-b border-neutral-200 px-3 py-2">
-        <span className="section-label">Items &amp; quantities</span>
+    <aside className="flex w-72 shrink-0 flex-col border-l border-neutral-300 bg-white" data-testid="items-panel">
+      <div className="flex items-center justify-between gap-2 border-b border-neutral-200 px-3 py-2">
+        <CollapseButton side="right" label="Items panel" onClick={() => setPanel('items', false)} testId="hide-items" />
+        <span className="section-label mr-auto">Items &amp; quantities</span>
         <button
           onClick={() => setAdding((a) => !a)}
           disabled={!sheets.length}

@@ -1,5 +1,6 @@
 import { useRef, useState } from 'react'
 import wordmark from '../assets/brand/cyclo-wordmark-chalk.svg'
+import { isFocused, usePanels } from '../panels'
 import { useApp, type Tool } from '../store'
 import ExportPdfDialog from './ExportPdfDialog'
 import ProjectMenu from './ProjectMenu'
@@ -29,24 +30,30 @@ export default function Toolbar() {
   const tool = useApp((s) => s.tool)
   const setTool = useApp((s) => s.setTool)
   const hasSheets = useApp((s) => s.sheets.length > 0)
+  // Focus mode: a slim one-row header with just the logo and the tools.
+  const slim = usePanels((s) => isFocused(s.open)) && hasSheets
 
   return (
     <header className="flex min-h-12 shrink-0 flex-wrap items-center gap-x-3 gap-y-1 bg-graphite px-3 py-1.5 text-chalk">
       <span className="flex items-center gap-3 whitespace-nowrap pr-1">
         {/* Cyclo wordmark, chalk on graphite, as supplied (never redrawn) */}
         <img src={wordmark} alt="Cyclo" className="h-[15px] w-auto" />
-        <span className="h-5 w-px bg-white/25" />
-        <span className="text-[15px] font-bold tracking-[-0.025em]">PlanMeasure</span>
+        {!slim && (
+          <>
+            <span className="h-5 w-px bg-white/25" />
+            <span className="text-[15px] font-bold tracking-[-0.025em]">PlanMeasure</span>
+          </>
+        )}
       </span>
-      <ProjectMenu />
-      <div className="h-6 w-px bg-white/20" />
-      <button
+      {!slim && <ProjectMenu />}
+      {!slim && <div className="h-6 w-px bg-white/20" />}
+      {!slim && <button
         className="rounded-md bg-accent px-3 py-1.5 text-sm font-medium whitespace-nowrap text-graphite hover:bg-accent-hover disabled:opacity-60"
         onClick={() => inputRef.current?.click()}
         disabled={loading}
       >
         {loading ? 'Opening…' : 'Open PDFs'}
-      </button>
+      </button>}
       <input
         ref={inputRef}
         type="file"
@@ -59,7 +66,7 @@ export default function Toolbar() {
           if (files.length) void openFiles(files)
         }}
       />
-      <div className="h-6 w-px bg-white/20" />
+      {!slim && <div className="h-6 w-px bg-white/20" />}
       <div className="flex flex-wrap items-center gap-1" role="toolbar" aria-label="Tools">
         {TOOL_GROUPS.map((group, g) => (
           <div key={g} className="flex items-center gap-1">
@@ -87,7 +94,7 @@ export default function Toolbar() {
         <div className="mx-1 h-6 w-px bg-white/20" />
         <ExportPdfButton />
       </div>
-      <span className="ml-auto hidden text-xs whitespace-nowrap text-foundation-grey 2xl:inline">
+      <span className={`ml-auto hidden text-xs whitespace-nowrap text-foundation-grey ${slim ? '' : '2xl:inline'}`}>
         Scroll to zoom · Space+drag to pan · files stay on your computer
       </span>
     </header>

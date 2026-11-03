@@ -5,6 +5,7 @@ import PlanViewer from './components/PlanViewer'
 import ScaleBar from './components/ScaleBar'
 import SheetList from './components/SheetList'
 import Toolbar from './components/Toolbar'
+import { usePanels } from './panels'
 import { DRAW_STYLES, useApp, type Tool } from './store'
 
 const TOOL_KEYS: Record<string, Tool> = {
@@ -12,6 +13,7 @@ const TOOL_KEYS: Record<string, Tool> = {
 }
 
 export default function App() {
+  const scaleBarOpen = usePanels((s) => s.open.scaleBar)
   const sheets = useApp((s) => s.sheets)
   const selectedId = useApp((s) => s.selectedSheetId)
   const openFiles = useApp((s) => s.openFiles)
@@ -43,6 +45,10 @@ export default function App() {
       if ((key === '1' || key === '2' || key === '3') && (st.tool === 'linear' || st.tool === 'area' || st.tool === 'perimeter')) {
         const style = (['polygon', 'rectangle', 'freehand'] as const)[Number(key) - 1]
         if (DRAW_STYLES[st.tool].includes(style)) st.setDrawStyle(st.tool, style)
+        return
+      }
+      if (key === 'f') {
+        usePanels.getState().toggleFocus()
         return
       }
       const tool = TOOL_KEYS[key]
@@ -87,7 +93,7 @@ export default function App() {
         <main className="relative min-w-0 flex-1">
           {selected ? (
             <div className="flex h-full flex-col">
-              <ScaleBar sheet={selected} />
+              {scaleBarOpen && <ScaleBar sheet={selected} />}
               <div className="relative min-h-0 flex-1">
                 <PlanViewer sheet={selected} />
               </div>
