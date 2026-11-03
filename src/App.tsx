@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import PlanViewer from './components/PlanViewer'
+import ScaleBar from './components/ScaleBar'
 import SheetList from './components/SheetList'
 import Toolbar from './components/Toolbar'
 import { useApp } from './store'
@@ -13,6 +14,20 @@ export default function App() {
   const dismissErrors = useApp((s) => s.dismissErrors)
   const selected = sheets.find((s) => s.id === selectedId) ?? null
   const [dragOver, setDragOver] = useState(false)
+
+  // Tool shortcuts: H = Pan, C = Calibrate, M = Measure.
+  const setTool = useApp((s) => s.setTool)
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.ctrlKey || e.metaKey || e.altKey) return
+      if (e.target instanceof HTMLElement && /^(INPUT|TEXTAREA|SELECT)$/.test(e.target.tagName)) return
+      if (!useApp.getState().sheets.length) return
+      const tool = ({ h: 'pan', c: 'calibrate', m: 'measure' } as const)[e.key.toLowerCase()]
+      if (tool) setTool(tool)
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [setTool])
 
   // Drop PDFs anywhere on the window.
   useEffect(() => {
@@ -47,7 +62,12 @@ export default function App() {
         <SheetList />
         <main className="relative min-w-0 flex-1">
           {selected ? (
-            <PlanViewer sheet={selected} />
+            <div className="flex h-full flex-col">
+              <ScaleBar sheet={selected} />
+              <div className="relative min-h-0 flex-1">
+                <PlanViewer sheet={selected} />
+              </div>
+            </div>
           ) : (
             <div className="flex h-full items-center justify-center bg-neutral-200">
               <div className="rounded-xl border-2 border-dashed border-neutral-400 px-10 py-12 text-center text-neutral-600">

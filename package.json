@@ -13,9 +13,11 @@
     "lint": "oxlint"
   },
   "dependencies": {
+    "konva": "^10.9.1",
     "pdfjs-dist": "^6.5.438",
     "react": "^19.3.1",
     "react-dom": "^19.3.1",
+    "react-konva": "^19.3.2",
     "zustand": "^5.0.16"
   },
   "devDependencies": {

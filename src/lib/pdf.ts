@@ -111,3 +111,17 @@ export async function renderThumbnail(sheet: SheetMeta, cssWidth = 160): Promise
   await renderPage(sheet, canvas, scale).promise
   return canvas.toDataURL('image/png')
 }
+
+/** All the text on a page, in reading order, joined with spaces. */
+export async function getPageText(sheet: SheetMeta): Promise<string> {
+  const page = await getPage(sheet)
+  const content = await page.getTextContent()
+  const parts: string[] = []
+  for (const item of content.items) {
+    if ('str' in item) {
+      parts.push(item.str)
+      if (item.hasEOL) parts.push('\n')
+    }
+  }
+  return parts.join(' ')
+}

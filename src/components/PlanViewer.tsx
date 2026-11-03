@@ -1,7 +1,11 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { renderPage, type RenderHandle, type SheetMeta } from '../lib/pdf'
+import { distancePt, formatLength, realMm, type Point } from '../lib/scale'
 import { describePaperSize } from '../lib/units'
-import { ACTUAL_SIZE_SCALE, fitView, zoomAt, type View } from '../lib/view'
+import { ACTUAL_SIZE_SCALE, fitView, screenToPage, zoomAt, type View } from '../lib/view'
+import { useApp } from '../store'
+import CalibrateDialog from './CalibrateDialog'
+import MeasureOverlay, { type OverlayLine } from './MeasureOverlay'
 
 /** Longest side (device px) of the low-res base image shown while zooming/panning. */
 const BASE_MAX_PX = 3000
@@ -36,6 +40,7 @@ export default function PlanViewer({ sheet }: Props) {
   const savedViews = useRef(new Map<string, View>())
 
   const [baseScale, setBaseScale] = useState(1)
+  const [boxSize, setBoxSize] = useState({ w: 0, h: 0 })
   // What view the current detail canvas was rendered for (and where it sits).
   const detailInfo = useRef<{ view: View; left: number; top: number } | null>(null)
 
@@ -151,6 +156,7 @@ export default function PlanViewer({ sheet }: Props) {
     const el = boxRef.current
     if (!el) return
     const ro = new ResizeObserver(() => {
+      setBoxSize({ w: el.clientWidth, h: el.clientHeight })
       const v = viewRef.current
       if (v) setView({ ...v })
     })
@@ -179,21 +185,118 @@ export default function PlanViewer({ sheet }: Props) {
     return () => el.removeEventListener('wheel', onWheel)
   }, [])
 
-  // ---- Panning: left-drag (Pan tool), middle-drag, or Space+drag ----
+  // ---- Tools ----
+  const tool = useApp((s) => s.tool)
+  const setTool = useApp((s) => s.setTool)
+  const scale = useApp((s) => s.scales[sheet.id])
+  const setCalibratedScale = useApp((s) => s.setCalibratedScale)
+
+  /** Points placed so far for the line being drawn (calibrate or measure). */
+  const [draft, setDraft] = useState<Point[]>([])
+  /** Where the cursor is on the page (for the rubber-band line). */
+  const [cursor, setCursor] = useState<Point | null>(null)
+  /** Last finished measurement, kept on screen until the next one. */
+  const [measured, setMeasured] = useState<Point[] | null>(null)
+  /** A finished calibration line waiting for the user to type its length. */
+  const [calibLine, setCalibLine] = useState<[Point, Point] | null>(null)
+
+  const resetDrawing = useCallback(() => {
+    setDraft([])
+    setCursor(null)
+    setMeasured(null)
+    setCalibLine(null)
+  }, [])
+
+  // Clear in-progress drawing when the sheet or tool changes.
+  const drawingKey = `${sheet.id}|${tool}`
+  const [lastDrawingKey, setLastDrawingKey] = useState(drawingKey)
+  if (lastDrawingKey !== drawingKey) {
+    setLastDrawingKey(drawingKey)
+    resetDrawing()
+  }
+
+  // Space held = temporary pan; Esc cancels.
+  const spaceHeld = useRef(false)
+  const [spaceDown, setSpaceDown] = useState(false)
+  useEffect(() => {
+    const isTyping = (e: KeyboardEvent) =>
+      e.target instanceof HTMLElement && /^(INPUT|TEXTAREA|SELECT)$/.test(e.target.tagName)
+    const down = (e: KeyboardEvent) => {
+      if (isTyping(e)) return
+      if (e.code === 'Space') {
+        e.preventDefault()
+        spaceHeld.current = true
+        setSpaceDown(true)
+      } else if (e.key === 'Escape') {
+        resetDrawing()
+      }
+    }
+    const up = (e: KeyboardEvent) => {
+      if (e.code === 'Space') {
+        spaceHeld.current = false
+        setSpaceDown(false)
+      }
+    }
+    window.addEventListener('keydown', down)
+    window.addEventListener('keyup', up)
+    return () => {
+      window.removeEventListener('keydown', down)
+      window.removeEventListener('keyup', up)
+    }
+  }, [resetDrawing])
+
+  /** Page point under the mouse. Shift locks the line horizontal or vertical. */
+  const pagePointFromEvent = (e: React.PointerEvent | React.MouseEvent, from?: Point): Point => {
+    const rect = boxRef.current!.getBoundingClientRect()
+    const p = screenToPage(viewRef.current!, e.clientX - rect.left, e.clientY - rect.top)
+    if (e.shiftKey && from) {
+      return Math.abs(p.x - from.x) >= Math.abs(p.y - from.y)
+        ? { x: p.x, y: from.y }
+        : { x: from.x, y: p.y }
+    }
+    return p
+  }
+
+  // ---- Panning: Pan tool left-drag, middle-drag, or Space+drag ----
   const drag = useRef<{ id: number; sx: number; sy: number; view: View } | null>(null)
   const [dragging, setDragging] = useState(false)
 
   const onPointerDown = (e: React.PointerEvent) => {
-    if (!view || (e.button !== 0 && e.button !== 1)) return
+    if (!view || calibLine) return
+    const wantsPan = e.button === 1 || (e.button === 0 && (tool === 'pan' || spaceHeld.current))
+    if (wantsPan) {
+      e.preventDefault()
+      ;(e.currentTarget as HTMLElement).setPointerCapture(e.pointerId)
+      drag.current = { id: e.pointerId, sx: e.clientX, sy: e.clientY, view }
+      setDragging(true)
+      return
+    }
+    if (e.button !== 0) return
+    // Stop the browser moving focus, so the calibration box keeps the cursor.
     e.preventDefault()
-    ;(e.currentTarget as HTMLElement).setPointerCapture(e.pointerId)
-    drag.current = { id: e.pointerId, sx: e.clientX, sy: e.clientY, view }
-    setDragging(true)
+
+    // Calibrate / Measure: click the start point, then the end point.
+    const p = pagePointFromEvent(e, draft[0])
+    if (draft.length === 0) {
+      setMeasured(null)
+      setDraft([p])
+      return
+    }
+    const line: [Point, Point] = [draft[0], p]
+    setDraft([])
+    if (distancePt(line[0], line[1]) < 0.5) return // ignore a double-click on the same spot
+    if (tool === 'calibrate') setCalibLine(line)
+    else setMeasured(line)
   }
   const onPointerMove = (e: React.PointerEvent) => {
     const d = drag.current
-    if (!d || d.id !== e.pointerId) return
-    setView({ ...d.view, x: d.view.x + e.clientX - d.sx, y: d.view.y + e.clientY - d.sy })
+    if (d && d.id === e.pointerId) {
+      setView({ ...d.view, x: d.view.x + e.clientX - d.sx, y: d.view.y + e.clientY - d.sy })
+      return
+    }
+    if (tool !== 'pan' && draft.length > 0 && viewRef.current) {
+      setCursor(pagePointFromEvent(e, draft[0]))
+    }
   }
   const endDrag = (e: React.PointerEvent) => {
     if (drag.current?.id === e.pointerId) {
@@ -201,6 +304,35 @@ export default function PlanViewer({ sheet }: Props) {
       setDragging(false)
     }
   }
+
+  // ---- What to draw on the overlay ----
+  const lengthLabel = (a: Point, b: Point) => {
+    if (!scale) return 'No scale'
+    const text = formatLength(realMm(distancePt(a, b), scale.realMmPerPt))
+    return scale.status === 'confirmed' ? text : `${text} (unverified)`
+  }
+  const overlayLines: OverlayLine[] = []
+  const toolColour = tool === 'calibrate' ? '#c2410c' : '#1d4ed8'
+  if (draft.length === 1 && cursor) {
+    overlayLines.push({
+      points: [draft[0], cursor],
+      colour: toolColour,
+      dashed: true,
+      label: tool === 'measure' ? lengthLabel(draft[0], cursor) : undefined,
+    })
+  } else if (draft.length === 1) {
+    overlayLines.push({ points: draft, colour: toolColour })
+  }
+  if (measured) {
+    overlayLines.push({ points: measured, colour: '#1d4ed8', label: lengthLabel(measured[0], measured[1]) })
+  }
+  if (calibLine) overlayLines.push({ points: calibLine, colour: '#c2410c' })
+
+  const cursorClass = dragging
+    ? 'cursor-grabbing'
+    : tool === 'pan' || spaceDown
+      ? 'cursor-grab'
+      : 'cursor-crosshair'
 
   // ---- Zoom buttons ----
   const zoomCentre = (factor: number) => {
@@ -219,9 +351,7 @@ export default function PlanViewer({ sheet }: Props) {
   return (
     <div
       ref={boxRef}
-      className={`relative h-full w-full overflow-hidden bg-neutral-500 select-none ${
-        dragging ? 'cursor-grabbing' : 'cursor-grab'
-      }`}
+      className={`relative h-full w-full overflow-hidden bg-neutral-500 select-none ${cursorClass}`}
       onPointerDown={onPointerDown}
       onPointerMove={onPointerMove}
       onPointerUp={endDrag}
@@ -238,6 +368,35 @@ export default function PlanViewer({ sheet }: Props) {
         className="pointer-events-none absolute top-0 left-0"
         style={{ transformOrigin: '0 0' }}
       />
+
+      {view && boxSize.w > 0 && (
+        <MeasureOverlay width={boxSize.w} height={boxSize.h} view={view} lines={overlayLines} />
+      )}
+
+      {tool !== 'pan' && !calibLine && (
+        <div className="pointer-events-none absolute top-3 left-1/2 -translate-x-1/2 rounded bg-black/70 px-3 py-1.5 text-sm text-white">
+          {tool === 'calibrate'
+            ? draft.length === 0
+              ? 'Calibrate: click one end of a dimension you know'
+              : 'Now click the other end (hold Shift for straight)'
+            : draft.length === 0
+              ? 'Measure: click the start point'
+              : 'Click the end point (hold Shift for straight)'}
+          <span className="text-white/60"> · Space+drag to pan · Esc to cancel</span>
+        </div>
+      )}
+
+      {calibLine && (
+        <CalibrateDialog
+          distPt={distancePt(calibLine[0], calibLine[1])}
+          onCancel={() => setCalibLine(null)}
+          onApply={(mmPerPt) => {
+            setCalibratedScale(sheet.id, mmPerPt)
+            setCalibLine(null)
+            setTool('measure')
+          }}
+        />
+      )}
 
       <div
         className="absolute right-3 bottom-3 flex items-center gap-1 rounded-lg bg-white/95 p-1 text-sm shadow-md"
@@ -260,6 +419,15 @@ export default function PlanViewer({ sheet }: Props) {
       <div className="pointer-events-none absolute bottom-3 left-3 rounded bg-black/60 px-2 py-1 text-xs text-white">
         {sheet.fileName} · page {sheet.pageNumber} · {describePaperSize(sheet.widthPt, sheet.heightPt)}
       </div>
+
+      {measured && (
+        <div
+          data-testid="measurement"
+          className="pointer-events-none absolute bottom-12 left-3 rounded bg-blue-700 px-2.5 py-1 text-sm font-medium text-white"
+        >
+          Measured: {lengthLabel(measured[0], measured[1])}
+        </div>
+      )}
     </div>
   )
 }

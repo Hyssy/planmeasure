@@ -1,4 +1,4 @@
-import { useApp } from '../store'
+import { useApp, type SheetScale } from '../store'
 import { paperSizeFromPt } from '../lib/units'
 
 export default function SheetList() {
@@ -6,6 +6,8 @@ export default function SheetList() {
   const thumbnails = useApp((s) => s.thumbnails)
   const selectedId = useApp((s) => s.selectedSheetId)
   const selectSheet = useApp((s) => s.selectSheet)
+  const scales = useApp((s) => s.scales)
+  const detections = useApp((s) => s.detections)
 
   return (
     <aside className="flex w-56 shrink-0 flex-col border-r border-neutral-300 bg-white">
@@ -46,6 +48,10 @@ export default function SheetList() {
                     {paper.name ?? `${Math.round(paper.widthMm)}×${Math.round(paper.heightMm)}`}
                   </span>
                 </div>
+                <ScaleBadge
+                  scale={scales[sheet.id]}
+                  multiple={(detections[sheet.id]?.candidates.length ?? 0) > 1}
+                />
                 <div className="truncate text-xs text-neutral-500" title={sheet.fileName}>
                   {sheet.fileName} · p{sheet.pageNumber}
                 </div>
@@ -56,4 +62,14 @@ export default function SheetList() {
       </ol>
     </aside>
   )
+}
+
+function ScaleBadge({ scale, multiple }: { scale: SheetScale | undefined; multiple: boolean }) {
+  const short = scale?.source === 'calibrated' ? 'Calibrated' : scale?.label.split(' (')[0]
+  const [cls, text] = !scale
+    ? ['bg-amber-100 text-amber-900', multiple ? '⚠ Several scales — choose' : '⚠ No scale']
+    : scale.status === 'detected'
+      ? ['bg-amber-100 text-amber-900', `${short} · verify`]
+      : ['bg-green-100 text-green-800', `✓ ${short}`]
+  return <div className={`mt-1 inline-block rounded px-1.5 py-0.5 text-xs font-medium ${cls}`}>{text}</div>
 }
