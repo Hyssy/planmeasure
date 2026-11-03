@@ -7,7 +7,7 @@ import {
   findScaleCandidates,
   formatRatio,
   mmPerPtFromRatio,
-  type PaperName,
+  scaleSuitsPage,
   type ScaleCandidate,
 } from './lib/scale'
 
@@ -28,8 +28,10 @@ export interface SheetScale {
 
 export interface ScaleDetection {
   done: boolean
-  /** distinct scales found in the sheet's text */
+  /** distinct scales found in the sheet's text that apply to this page */
   candidates: ScaleCandidate[]
+  /** scales for a different sheet size (e.g. "@ A1" on an A3 page) — must calibrate */
+  mismatched: ScaleCandidate[]
 }
 
 interface AppState {
@@ -47,25 +49,18 @@ interface AppState {
   dismissErrors: () => void
   setTool: (tool: Tool) => void
   /** Use a ratio scale (from detection or picked by the user) — always confirmed. */
-  setRatioScale: (sheetId: string, ratio: number, paper: PaperName | null, source: 'detected' | 'manual') => void
+  setRatioScale: (sheetId: string, c: Pick<ScaleCandidate, 'ratio' | 'paper'>, source: 'detected' | 'manual') => void
   setCalibratedScale: (sheetId: string, realMmPerPt: number) => void
   confirmScale: (sheetId: string) => void
   clearScale: (sheetId: string) => void
 }
 
-export function ratioScale(
-  sheet: SheetMeta,
-  ratio: number,
-  paper: PaperName | null,
-): { realMmPerPt: number; label: string } {
-  const realMmPerPt = mmPerPtFromRatio(ratio, paper, sheet.widthPt, sheet.heightPt)
-  let label = describeCandidate({ ratio, paper })
-  const effective = equivalentRatio(realMmPerPt)
-  if (Math.abs(effective - ratio) / ratio > 0.01) label += ` (${formatRatio(effective)} on this page)`
-  return { realMmPerPt, label }
+/** Scale for a 1:ratio drawing printed at its intended size on this page. */
+export function ratioScale(c: Pick<ScaleCandidate, 'ratio' | 'paper'>): { realMmPerPt: number; label: string } {
+  return { realMmPerPt: mmPerPtFromRatio(c.ratio), label: describeCandidate(c) }
 }
 
-export const useApp = create<AppState>((set, get) => ({
+export const useApp = create<AppState>((set) => ({
   sheets: [],
   selectedSheetId: null,
   thumbnails: {},
@@ -101,22 +96,20 @@ export const useApp = create<AppState>((set, get) => ({
 
     // Scale detection: read each sheet's text (fast), then make thumbnails (slower).
     for (const sheet of added) {
-      let candidates: ScaleCandidate[] = []
+      let found: ScaleCandidate[] = []
       try {
-        candidates = distinctScales(findScaleCandidates(await getPageText(sheet)))
+        found = distinctScales(findScaleCandidates(await getPageText(sheet)))
       } catch (err) {
         console.error('Text extraction failed', sheet.id, err)
       }
+      const fits = (c: ScaleCandidate) => scaleSuitsPage(c, sheet.widthPt, sheet.heightPt)
+      const candidates = found.filter(fits)
+      const mismatched = found.filter((c) => !fits(c))
       set((s) => {
-        const detections = { ...s.detections, [sheet.id]: { done: true, candidates } }
-        // Exactly one scale found → suggest it (still needs verifying).
-        if (candidates.length === 1 && !s.scales[sheet.id]) {
-          const c = candidates[0]
-          const scale: SheetScale = {
-            ...ratioScale(sheet, c.ratio, c.paper),
-            status: 'detected',
-            source: 'detected',
-          }
+        const detections = { ...s.detections, [sheet.id]: { done: true, candidates, mismatched } }
+        // Exactly one scale found, and it suits this page size → suggest it (still needs verifying).
+        if (candidates.length === 1 && mismatched.length === 0 && !s.scales[sheet.id]) {
+          const scale: SheetScale = { ...ratioScale(candidates[0]), status: 'detected', source: 'detected' }
           return { detections, scales: { ...s.scales, [sheet.id]: scale } }
         }
         return { detections }
@@ -137,10 +130,8 @@ export const useApp = create<AppState>((set, get) => ({
   dismissErrors: () => set({ errors: [] }),
   setTool: (tool) => set({ tool }),
 
-  setRatioScale: (sheetId, ratio, paper, source) => {
-    const sheet = get().sheets.find((s) => s.id === sheetId)
-    if (!sheet) return
-    const scale: SheetScale = { ...ratioScale(sheet, ratio, paper), status: 'confirmed', source }
+  setRatioScale: (sheetId, c, source) => {
+    const scale: SheetScale = { ...ratioScale(c), status: 'confirmed', source }
     set((s) => ({ scales: { ...s.scales, [sheetId]: scale } }))
   },
 

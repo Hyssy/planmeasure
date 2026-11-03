@@ -7,7 +7,7 @@
  *   1 pt on paper = 0.352778 mm, so a 1:100 drawing printed at its intended
  *   size has realMmPerPt = 0.352778 × 100 = 35.2778.
  */
-import { ISO_A_SIZES, MM_PER_PT, ptToMm } from './units'
+import { MM_PER_PT, paperSizeFromPt } from './units'
 
 export type PaperName = 'A0' | 'A1' | 'A2' | 'A3' | 'A4'
 
@@ -28,37 +28,24 @@ export function polylineLengthPt(points: Point[]): number {
   return total
 }
 
-/**
- * Real mm per PDF point for a ratio scale (1:ratio).
- *
- * If the scale says it is for a particular sheet size (e.g. "1:100 @ A1") and
- * the PDF page is a different size (e.g. an A3 print of an A1 drawing), the
- * drawing has been shrunk or enlarged by the ratio of the sheet sizes, so the
- * scale is adjusted by (intended long side ÷ actual long side).
- */
-export function mmPerPtFromRatio(
-  ratio: number,
-  intendedPaper: PaperName | null = null,
-  pageWidthPt?: number,
-  pageHeightPt?: number,
-): number {
-  const atIntendedSize = MM_PER_PT * ratio
-  if (!intendedPaper || pageWidthPt === undefined || pageHeightPt === undefined) {
-    return atIntendedSize
-  }
-  return atIntendedSize * paperResizeFactor(intendedPaper, pageWidthPt, pageHeightPt)
+/** Real mm per PDF point for a 1:ratio drawing printed at its intended size. */
+export function mmPerPtFromRatio(ratio: number): number {
+  return MM_PER_PT * ratio
 }
 
-/** How much larger the intended sheet is than the actual page (2 for A1 → A3). */
-export function paperResizeFactor(
-  intendedPaper: PaperName,
+/**
+ * Does a printed scale apply to this page as it is?
+ *
+ * "1:100 @ A1" only holds if the PDF page really is A1. If the sheet has been
+ * resized (e.g. an A1 drawing printed on A3) we don't guess the resize factor —
+ * the user must calibrate from a dimension line instead.
+ */
+export function scaleSuitsPage(
+  c: Pick<ScaleCandidate, 'paper'>,
   pageWidthPt: number,
   pageHeightPt: number,
-): number {
-  const intended = ISO_A_SIZES.find((s) => s.name === intendedPaper)
-  if (!intended) return 1
-  const actualLongMm = Math.max(ptToMm(pageWidthPt), ptToMm(pageHeightPt))
-  return intended.longMm / actualLongMm
+): boolean {
+  return c.paper === null || paperSizeFromPt(pageWidthPt, pageHeightPt).name === c.paper
 }
 
 /** Calibration: the user drew a line `distPt` long and says it is `realMm` in reality. */

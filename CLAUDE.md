@@ -37,7 +37,7 @@ A browser-based PDF takeoff and markup tool for construction plans (architectura
 - Store all geometry in **PDF page coordinates** (points), not screen pixels, so zoom never affects measurements.
 - Each page has a scale: `realMmPerPdfPt`. For a drawing at 1:100 printed at its intended sheet size: `0.352778 × 100`.
 - **Scale detection** reads the text layer for patterns like `1:100`, `SCALE 1:50`, `1:100 @ A1`, `1:200 @ A3`.
-  - If the scale says `@ A1` but the PDF page is A3, adjust for the size difference.
+  - If the scale says `@ A1` but the PDF page is A3 (the sheet has been resized), **don't adjust or guess**: show no suggested scale, flag "Sheet has been resized", and prompt the user to calibrate from a dimension line on the plan. (Decided by Jordan.) Manually picked scales always mean "as printed on this page".
   - If multiple scales appear on one sheet (several viewports), flag it and let the user choose, or set a scale per region.
   - Detected scale is a **suggestion**. Show it clearly as "Detected — please verify".
 - **Calibrate tool**: user clicks two points on a known dimension and types the real length. This always overrides detection.

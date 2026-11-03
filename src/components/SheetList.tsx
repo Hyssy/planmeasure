@@ -51,6 +51,7 @@ export default function SheetList() {
                 <ScaleBadge
                   scale={scales[sheet.id]}
                   multiple={(detections[sheet.id]?.candidates.length ?? 0) > 1}
+                  resized={(detections[sheet.id]?.mismatched.length ?? 0) > 0}
                 />
                 <div className="truncate text-xs text-neutral-500" title={sheet.fileName}>
                   {sheet.fileName} · p{sheet.pageNumber}
@@ -64,10 +65,11 @@ export default function SheetList() {
   )
 }
 
-function ScaleBadge({ scale, multiple }: { scale: SheetScale | undefined; multiple: boolean }) {
+function ScaleBadge(props: { scale: SheetScale | undefined; multiple: boolean; resized: boolean }) {
+  const { scale, multiple, resized } = props
   const short = scale?.source === 'calibrated' ? 'Calibrated' : scale?.label.split(' (')[0]
   const [cls, text] = !scale
-    ? ['bg-amber-100 text-amber-900', multiple ? '⚠ Several scales — choose' : '⚠ No scale']
+    ? ['bg-amber-100 text-amber-900', resized ? '⚠ Resized — calibrate' : multiple ? '⚠ Several scales — choose' : '⚠ No scale']
     : scale.status === 'detected'
       ? ['bg-amber-100 text-amber-900', `${short} · verify`]
       : ['bg-green-100 text-green-800', `✓ ${short}`]

@@ -1,9 +1,8 @@
 import { useState } from 'react'
-import { COMMON_RATIOS, describeCandidate, type PaperName } from '../lib/scale'
+import { COMMON_RATIOS, describeCandidate } from '../lib/scale'
+import { paperSizeFromPt } from '../lib/units'
 import type { SheetMeta } from '../lib/pdf'
 import { useApp } from '../store'
-
-const PAPERS: PaperName[] = ['A0', 'A1', 'A2', 'A3', 'A4']
 
 /** Shows and sets the current sheet's scale, above the plan. */
 export default function ScaleBar({ sheet }: { sheet: SheetMeta }) {
@@ -15,6 +14,7 @@ export default function ScaleBar({ sheet }: { sheet: SheetMeta }) {
   const [picking, setPicking] = useState(false)
 
   const candidates = detection?.candidates ?? []
+  const mismatched = detection?.mismatched ?? []
   const calibrate = (
     <BarButton onClick={() => setTool('calibrate')} primary={!scale}>
       {scale?.source === 'calibrated' ? 'Calibrate again' : 'Calibrate'}
@@ -49,12 +49,26 @@ export default function ScaleBar({ sheet }: { sheet: SheetMeta }) {
         {change}
       </>
     )
+  } else if (mismatched.length > 0) {
+    const page = paperSizeFromPt(sheet.widthPt, sheet.heightPt)
+    content = (
+      <>
+        <span className="font-medium text-amber-900">⚠ Sheet has been resized</span>
+        <span className="text-neutral-600">
+          It says {mismatched.map(describeCandidate).join(', ')}, but this PDF is{' '}
+          {page.name ?? `${Math.round(page.widthMm)} × ${Math.round(page.heightMm)} mm`}, so the printed
+          scale doesn’t apply. Calibrate using a dimension line on the plan.
+        </span>
+        <div className="flex-1" />
+        {calibrate}
+      </>
+    )
   } else if (candidates.length > 1) {
     content = (
       <>
         <span className="font-medium text-amber-900">⚠ Several scales on this sheet:</span>
         {candidates.map((c) => (
-          <BarButton key={describeCandidate(c)} onClick={() => setRatioScale(sheet.id, c.ratio, c.paper, 'detected')}>
+          <BarButton key={describeCandidate(c)} onClick={() => setRatioScale(sheet.id, c, 'detected')}>
             Use {describeCandidate(c)}
           </BarButton>
         ))}
@@ -90,9 +104,8 @@ export default function ScaleBar({ sheet }: { sheet: SheetMeta }) {
       </div>
       {picking && (
         <ScalePicker
-          sheet={sheet}
-          onDone={(ratio, paper) => {
-            setRatioScale(sheet.id, ratio, paper, 'manual')
+          onDone={(ratio) => {
+            setRatioScale(sheet.id, { ratio, paper: null }, 'manual')
             setPicking(false)
           }}
           onCancel={() => setPicking(false)}
@@ -102,13 +115,8 @@ export default function ScaleBar({ sheet }: { sheet: SheetMeta }) {
   )
 }
 
-function ScalePicker(props: {
-  sheet: SheetMeta
-  onDone: (ratio: number, paper: PaperName | null) => void
-  onCancel: () => void
-}) {
+function ScalePicker(props: { onDone: (ratio: number) => void; onCancel: () => void }) {
   const [ratio, setRatio] = useState(100)
-  const [paper, setPaper] = useState<PaperName | ''>('')
   return (
     <div className="flex flex-wrap items-center gap-2 border-t border-neutral-200 bg-neutral-50 px-3 py-2 text-sm">
       <label className="flex items-center gap-1">
@@ -125,22 +133,8 @@ function ScalePicker(props: {
           ))}
         </select>
       </label>
-      <label className="flex items-center gap-1">
-        drawn for
-        <select
-          className="rounded border border-neutral-300 bg-white px-1.5 py-1"
-          value={paper}
-          onChange={(e) => setPaper(e.target.value as PaperName | '')}
-        >
-          <option value="">this page size</option>
-          {PAPERS.map((p) => (
-            <option key={p} value={p}>
-              {p}
-            </option>
-          ))}
-        </select>
-      </label>
-      <BarButton primary onClick={() => props.onDone(ratio, paper || null)}>
+      <span className="text-neutral-500">as printed on this page</span>
+      <BarButton primary onClick={() => props.onDone(ratio)}>
         Apply
       </BarButton>
       <BarButton onClick={props.onCancel}>Cancel</BarButton>

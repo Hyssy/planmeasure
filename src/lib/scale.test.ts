@@ -9,9 +9,9 @@ import {
   formatRatio,
   mmPerPtFromCalibration,
   mmPerPtFromRatio,
-  paperResizeFactor,
   polylineLengthPt,
   realMm,
+  scaleSuitsPage,
 } from './scale'
 import { mmToPt } from './units'
 
@@ -21,24 +21,19 @@ const A3 = { w: mmToPt(420), h: mmToPt(297) }
 describe('ratio scales', () => {
   it('1:100 at intended size is 0.352778 × 100 mm per point', () => {
     expect(mmPerPtFromRatio(100)).toBeCloseTo(35.2778, 4)
+    expect(equivalentRatio(mmPerPtFromRatio(250))).toBeCloseTo(250, 10)
   })
 
-  it('1:100 @ A1 on an A1 page is unchanged', () => {
-    expect(mmPerPtFromRatio(100, 'A1', A1.w, A1.h)).toBeCloseTo(35.2778, 4)
+  it('a scale with no sheet size, or the matching size, applies to the page', () => {
+    expect(scaleSuitsPage({ paper: null }, A3.w, A3.h)).toBe(true)
+    expect(scaleSuitsPage({ paper: 'A1' }, A1.w, A1.h)).toBe(true)
+    expect(scaleSuitsPage({ paper: 'A1' }, A1.h, A1.w)).toBe(true) // portrait
   })
 
-  it('1:100 @ A1 printed on A3 measures like 1:200', () => {
-    expect(paperResizeFactor('A1', A3.w, A3.h)).toBeCloseTo(841 / 420, 10)
-    expect(mmPerPtFromRatio(100, 'A1', A3.w, A3.h)).toBeCloseTo(35.2778 * (841 / 420), 3)
-    expect(equivalentRatio(mmPerPtFromRatio(100, 'A1', A3.w, A3.h))).toBeCloseTo(200, 0)
-  })
-
-  it('1:200 @ A3 printed on A1 measures like 1:100', () => {
-    expect(equivalentRatio(mmPerPtFromRatio(200, 'A3', A1.w, A1.h))).toBeCloseTo(100, 0)
-  })
-
-  it('works for portrait pages too', () => {
-    expect(paperResizeFactor('A1', A3.h, A3.w)).toBeCloseTo(841 / 420, 10)
+  it('"1:100 @ A1" on an A3 page does not apply (must calibrate)', () => {
+    expect(scaleSuitsPage({ paper: 'A1' }, A3.w, A3.h)).toBe(false)
+    expect(scaleSuitsPage({ paper: 'A3' }, A1.w, A1.h)).toBe(false)
+    expect(scaleSuitsPage({ paper: 'A1' }, 612, 792)).toBe(false) // US Letter
   })
 })
 
