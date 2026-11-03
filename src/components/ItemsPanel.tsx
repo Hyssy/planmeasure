@@ -1,6 +1,9 @@
 import { useMemo, useState } from 'react'
 import {
   formatQuantity,
+  grossAreaM2,
+  netAreaM2,
+  perimeterM,
   ITEM_COLOURS,
   itemTotal,
   KIND_LABEL,
@@ -8,6 +11,7 @@ import {
   takeoffQuantity,
   type Item,
   type SheetScaleInfo,
+  type Takeoff,
   type TakeoffKind,
 } from '../lib/takeoff'
 import { scaleInfo, sheetName, TAKEOFF_TOOLS, useApp } from '../store'
@@ -343,6 +347,9 @@ function SelectedShape({ scaleInfos }: { scaleInfos: Record<string, SheetScaleIn
   const items = useApp((s) => s.items)
   const updateTakeoff = useApp((s) => s.updateTakeoff)
   const deleteTakeoff = useApp((s) => s.deleteTakeoff)
+  const startCutout = useApp((s) => s.startCutout)
+  const removeCutout = useApp((s) => s.removeCutout)
+  const cutoutFor = useApp((s) => s.cutoutFor)
   if (!takeoff) return null
   const item = items.find((i) => i.id === takeoff.itemId)
   if (!item) return null
@@ -357,6 +364,15 @@ function SelectedShape({ scaleInfos }: { scaleInfos: Record<string, SheetScaleIn
           <span className="ml-1 text-xs font-normal text-amber-800">unverified scale</span>
         )}
       </div>
+      {item.kind === 'area' && (
+        <AreaBreakdown
+          takeoff={takeoff}
+          scale={scaleInfos[takeoff.sheetId]}
+          drawing={cutoutFor === takeoff.id}
+          onAdd={() => startCutout(takeoff.id)}
+          onRemove={(i) => removeCutout(takeoff.id, i)}
+        />
+      )}
       <label className="mt-2 block text-xs text-neutral-600">
         Item
         <select
@@ -378,6 +394,57 @@ function SelectedShape({ scaleInfos }: { scaleInfos: Record<string, SheetScaleIn
           Delete shape
         </button>
       </div>
+    </div>
+  )
+}
+
+/** Gross area, cut-outs and net area for a selected area shape. */
+function AreaBreakdown(props: {
+  takeoff: Takeoff
+  scale: SheetScaleInfo | undefined
+  drawing: boolean
+  onAdd: () => void
+  onRemove: (index: number) => void
+}) {
+  const { takeoff: t, scale, drawing } = props
+  const k = scale?.realMmPerPt
+  const fmt = (v: number) => (k ? formatQuantity(v, 'area') : '—')
+  return (
+    <div className="mt-2 rounded border border-neutral-200 bg-white p-2 text-xs" data-testid="area-breakdown">
+      <table className="w-full">
+        <tbody>
+          <tr>
+            <td className="text-neutral-600">Gross area</td>
+            <td className="text-right tabular-nums">{fmt(k ? grossAreaM2(t.points, k) : 0)}</td>
+          </tr>
+          {t.holes.map((h, i) => (
+            <tr key={i}>
+              <td className="text-neutral-600">
+                Cut-out {i + 1}{' '}
+                <button onClick={() => props.onRemove(i)} className="text-red-700 hover:underline">
+                  remove
+                </button>
+              </td>
+              <td className="text-right tabular-nums">− {fmt(k ? grossAreaM2(h, k) : 0)}</td>
+            </tr>
+          ))}
+          <tr className="font-semibold">
+            <td>Net area</td>
+            <td className="text-right tabular-nums">{fmt(k ? netAreaM2(t.points, t.holes, k) : 0)}</td>
+          </tr>
+          <tr>
+            <td className="text-neutral-600">Outer perimeter</td>
+            <td className="text-right tabular-nums">{k ? formatQuantity(perimeterM(t.points, k), 'perimeter') : '—'}</td>
+          </tr>
+        </tbody>
+      </table>
+      <button
+        onClick={props.onAdd}
+        disabled={drawing}
+        className="mt-2 w-full rounded border border-neutral-300 px-2 py-1 font-medium hover:bg-neutral-100 disabled:bg-neutral-100 disabled:text-neutral-500"
+      >
+        {drawing ? 'Drawing cut-out… (Esc to stop)' : '+ Add cut-out'}
+      </button>
     </div>
   )
 }

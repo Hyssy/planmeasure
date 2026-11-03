@@ -115,6 +115,12 @@ interface AppState {
   updateTakeoff: (id: string, patch: Partial<Pick<Takeoff, 'points' | 'holes' | 'itemId'>>, recordUndo?: boolean) => void
   deleteTakeoff: (id: string) => void
   selectTakeoff: (id: string | null) => void
+  /** Area shape currently getting a cut-out drawn on it */
+  cutoutFor: string | null
+  startCutout: (takeoffId: string) => void
+  cancelCutout: () => void
+  addCutout: (takeoffId: string, points: Takeoff['points']) => void
+  removeCutout: (takeoffId: string, index: number) => void
   /** Save the current state for undo (call once before a drag that updates without recording). */
   checkpoint: () => void
   undo: () => void
@@ -175,6 +181,7 @@ function keepValidRefs(s: AppState, next: Snapshot): Partial<AppState> {
   return {
     activeItemId: next.items.some((i) => i.id === s.activeItemId) ? s.activeItemId : null,
     selectedTakeoffId: next.takeoffs.some((t) => t.id === s.selectedTakeoffId) ? s.selectedTakeoffId : null,
+    cutoutFor: null,
   }
 }
 
@@ -194,6 +201,7 @@ export const useApp = create<AppState>((set) => ({
   takeoffs: [],
   activeItemId: null,
   selectedTakeoffId: null,
+  cutoutFor: null,
   past: [],
   future: [],
   loading: false,
@@ -268,11 +276,11 @@ export const useApp = create<AppState>((set) => ({
   setTool: (tool) =>
     set((s) => {
       // Switching to a takeoff tool: keep the active item if it matches, else use the latest of that kind.
-      if (!isTakeoffTool(tool)) return { tool }
+      if (!isTakeoffTool(tool)) return { tool, cutoutFor: null }
       const active = s.items.find((i) => i.id === s.activeItemId)
-      if (active?.kind === tool) return { tool, selectedTakeoffId: null }
+      if (active?.kind === tool) return { tool, selectedTakeoffId: null, cutoutFor: null }
       const latest = [...s.items].reverse().find((i) => i.kind === tool)
-      return { tool, activeItemId: latest?.id ?? null, selectedTakeoffId: null }
+      return { tool, activeItemId: latest?.id ?? null, selectedTakeoffId: null, cutoutFor: null }
     }),
 
   setRatioScale: (sheetId, c, source) => {
@@ -363,7 +371,21 @@ export const useApp = create<AppState>((set) => ({
       selectedTakeoffId: s.selectedTakeoffId === id ? null : s.selectedTakeoffId,
     })),
 
-  selectTakeoff: (id) => set({ selectedTakeoffId: id }),
+  selectTakeoff: (id) => set((s) => ({ selectedTakeoffId: id, cutoutFor: id === s.cutoutFor ? s.cutoutFor : null })),
+
+  startCutout: (takeoffId) => set({ cutoutFor: takeoffId, selectedTakeoffId: takeoffId, tool: 'select' }),
+  cancelCutout: () => set({ cutoutFor: null }),
+  addCutout: (takeoffId, points) =>
+    set((s) => ({
+      ...record(s),
+      cutoutFor: null,
+      takeoffs: s.takeoffs.map((t) => (t.id === takeoffId ? { ...t, holes: [...t.holes, points] } : t)),
+    })),
+  removeCutout: (takeoffId, index) =>
+    set((s) => ({
+      ...record(s),
+      takeoffs: s.takeoffs.map((t) => (t.id === takeoffId ? { ...t, holes: t.holes.filter((_, i) => i !== index) } : t)),
+    })),
 
   checkpoint: () => set((s) => record(s)),
 

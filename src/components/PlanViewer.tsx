@@ -201,6 +201,12 @@ export default function PlanViewer({ sheet }: Props) {
   const addTakeoff = useApp((s) => s.addTakeoff)
   const deleteTakeoff = useApp((s) => s.deleteTakeoff)
   const selectTakeoff = useApp((s) => s.selectTakeoff)
+  const updateTakeoff = useApp((s) => s.updateTakeoff)
+  const checkpoint = useApp((s) => s.checkpoint)
+  const cutoutFor = useApp((s) => s.cutoutFor)
+  const addCutout = useApp((s) => s.addCutout)
+  const cancelCutout = useApp((s) => s.cancelCutout)
+  const [notice, setNotice] = useState<string | null>(null)
 
   const itemsById = useMemo(() => new Map(items.map((i) => [i.id, i])), [items])
   const takeoffs = useMemo(() => allTakeoffs.filter((t) => t.sheetId === sheet.id), [allTakeoffs, sheet.id])
@@ -225,18 +231,31 @@ export default function PlanViewer({ sheet }: Props) {
   }, [setDraft, setCursor, setMeasured, setCalibLine])
 
   // Clear in-progress drawing when the sheet or tool changes.
-  const drawingKey = `${sheet.id}|${tool}`
+  const drawingKey = `${sheet.id}|${tool}|${cutoutFor}`
   const [lastDrawingKey, setLastDrawingKey] = useState(drawingKey)
   if (lastDrawingKey !== drawingKey) {
     setLastDrawingKey(drawingKey)
     resetDrawing()
   }
 
-  const isClosedTool = tool === 'area' || tool === 'perimeter'
+  const cutoutTarget = cutoutFor ? takeoffs.find((t) => t.id === cutoutFor) : undefined
+  const isClosedTool = tool === 'area' || tool === 'perimeter' || !!cutoutTarget
   const minPoints = isClosedTool ? 3 : 2
 
   /** Finish the shape being drawn (Enter, double-click, or clicking the first point). */
   const finishShape = (pts: Point[] = draft) => {
+    if (cutoutTarget) {
+      setDraft([])
+      setCursor(null)
+      if (pts.length < 3) return
+      if (!pts.every((q) => pointInPolygon(q, cutoutTarget.points))) {
+        setNotice('A cut-out must be inside the area. Try again, or press Esc to stop.')
+        return
+      }
+      setNotice(null)
+      addCutout(cutoutTarget.id, pts)
+      return
+    }
     if (!isTakeoffTool(tool) || tool === 'count') return
     if (pts.length >= minPoints) addTakeoff(sheet.id, tool, pts)
     setDraft([])
@@ -249,7 +268,9 @@ export default function PlanViewer({ sheet }: Props) {
   const keyHandler = useRef<(e: KeyboardEvent) => void>(() => {})
   const onKey = (e: KeyboardEvent) => {
     if (e.key === 'Escape') {
+      setNotice(null)
       if (draft.length || measured || calibLine) resetDrawing()
+      else if (cutoutFor) cancelCutout()
       else selectTakeoff(null)
     } else if (e.key === 'Enter' && draft.length) {
       e.preventDefault()
@@ -327,6 +348,50 @@ export default function PlanViewer({ sheet }: Props) {
     return null
   }
 
+  /** Which handle of the selected shape is under a page point: ring -1 = outline, 0+ = cut-outs. */
+  const handleAt = (p: Point): { ring: number; index: number } | null => {
+    const v = viewRef.current
+    const t = takeoffs.find((x) => x.id === selectedId)
+    if (!v || !t || itemsById.get(t.itemId)?.kind === 'count') return null
+    const rings = [t.points, ...t.holes]
+    for (let r = 0; r < rings.length; r++) {
+      const index = rings[r].findIndex((q) => distancePt(p, q) * v.scale <= 7)
+      if (index >= 0) return { ring: r - 1, index }
+    }
+    return null
+  }
+
+  // ---- Editing shapes: drag a handle to reshape, or the shape to move it ----
+  const edit = useRef<{
+    pointerId: number
+    takeoff: Takeoff
+    start: Point
+    handle: { ring: number; index: number } | null
+    moved: boolean
+  } | null>(null)
+
+  const editMove = (e: React.PointerEvent) => {
+    const d = edit.current
+    if (!d || d.pointerId !== e.pointerId) return false
+    const p = pagePointFromEvent(e)
+    const dx = p.x - d.start.x
+    const dy = p.y - d.start.y
+    if (!d.moved) {
+      if (Math.hypot(dx, dy) * viewRef.current!.scale < 2) return true // ignore tiny jitter on a click
+      checkpoint() // one undo step per drag
+      d.moved = true
+    }
+    const { takeoff: t, handle } = d
+    if (handle) {
+      const moveIn = (ring: Point[], r: number) => (r === handle.ring ? ring.map((q, i) => (i === handle.index ? p : q)) : ring)
+      updateTakeoff(t.id, { points: moveIn(t.points, -1), holes: t.holes.map((h, i) => moveIn(h, i)) }, false)
+    } else {
+      const shift = (ring: Point[]) => ring.map((q) => ({ x: q.x + dx, y: q.y + dy }))
+      updateTakeoff(t.id, { points: shift(t.points), holes: t.holes.map(shift) }, false)
+    }
+    return true
+  }
+
   // ---- Panning: Pan tool left-drag, middle-drag, or Space+drag ----
   const drag = useRef<{ id: number; sx: number; sy: number; view: View } | null>(null)
   const [dragging, setDragging] = useState(false)
@@ -347,8 +412,25 @@ export default function PlanViewer({ sheet }: Props) {
     const last = draft[draft.length - 1]
     const p = pagePointFromEvent(e, last)
 
+    if (cutoutTarget) {
+      if (draft.length >= 3 && distancePt(p, draft[0]) * view.scale < 10) {
+        finishShape()
+        return
+      }
+      if (last && distancePt(p, last) < 0.5) return
+      setDraft([...draft, p])
+      return
+    }
+
     if (tool === 'select') {
-      selectTakeoff(hitTest(p))
+      const handle = handleAt(p)
+      const id = handle ? selectedId : hitTest(p)
+      selectTakeoff(id)
+      const t = takeoffs.find((x) => x.id === id)
+      if (t) {
+        ;(e.currentTarget as HTMLElement).setPointerCapture(e.pointerId)
+        edit.current = { pointerId: e.pointerId, takeoff: t, start: p, handle, moved: false }
+      }
       return
     }
 
@@ -381,19 +463,26 @@ export default function PlanViewer({ sheet }: Props) {
     else setMeasured(line)
   }
   const onDoubleClick = () => {
-    if (tool === 'linear' || tool === 'area' || tool === 'perimeter') finishShape()
+    if (cutoutTarget || tool === 'linear' || tool === 'area' || tool === 'perimeter') finishShape()
   }
+  const [hoverHandle, setHoverHandle] = useState(false)
   const onPointerMove = (e: React.PointerEvent) => {
+    if (editMove(e)) return
+    if (tool === 'select' && viewRef.current) {
+      const over = handleAt(pagePointFromEvent(e)) !== null
+      if (over !== hoverHandle) setHoverHandle(over)
+    }
     const d = drag.current
     if (d && d.id === e.pointerId) {
       setView({ ...d.view, x: d.view.x + e.clientX - d.sx, y: d.view.y + e.clientY - d.sy })
       return
     }
-    if (tool !== 'pan' && tool !== 'select' && draft.length > 0 && viewRef.current) {
+    if (tool !== 'pan' && (tool !== 'select' || cutoutTarget) && draft.length > 0 && viewRef.current) {
       setCursor(pagePointFromEvent(e, draft[draft.length - 1]))
     }
   }
   const endDrag = (e: React.PointerEvent) => {
+    if (edit.current?.pointerId === e.pointerId) edit.current = null
     if (drag.current?.id === e.pointerId) {
       drag.current = null
       setDragging(false)
@@ -430,8 +519,15 @@ export default function PlanViewer({ sheet }: Props) {
     const text = formatQuantity(q.value, kind) + (kind === 'count' ? ' counted' : '')
     return q.state === 'unverified' && kind !== 'count' ? `${text} (unverified)` : text
   }
-  const takeoffDraft: TakeoffDraft | null =
-    isTakeoffTool(tool) && tool !== 'count' && draft.length > 0
+  const takeoffDraft: TakeoffDraft | null = cutoutTarget && draft.length > 0
+    ? {
+        kind: 'cutout',
+        colour: '#111',
+        points: draft,
+        cursor,
+        label: `− ${qtyText({ points: cursor ? [...draft, cursor] : draft, holes: [] }, 'area')}`,
+      }
+    : isTakeoffTool(tool) && tool !== 'count' && draft.length > 0
       ? {
           kind: tool,
           colour: drawItem?.colour ?? ITEM_COLOURS[items.length % ITEM_COLOURS.length],
@@ -448,17 +544,24 @@ export default function PlanViewer({ sheet }: Props) {
     ? 'cursor-grabbing'
     : tool === 'pan' || spaceDown
       ? 'cursor-grab'
-      : tool === 'select'
-        ? 'cursor-default'
+      : cutoutTarget
+        ? 'cursor-crosshair'
+        : tool === 'select'
+        ? hoverHandle
+          ? 'cursor-move'
+          : 'cursor-default'
         : 'cursor-crosshair'
 
   const itemName = drawItem ? `“${drawItem.name}”` : 'a new item'
-  const hint =
-    tool === 'pan'
+  const hint = cutoutTarget
+    ? draft.length === 0
+      ? 'Cut-out: click the corners of the part to deduct'
+      : 'Click to add corners · click the first point or press Enter to finish'
+    : tool === 'pan'
       ? null
       : tool === 'select'
         ? selected
-          ? 'Selected · Delete to remove · Esc to deselect'
+          ? 'Drag a corner to reshape, or the shape to move it · Delete to remove · Esc to deselect'
           : 'Select: click a shape'
         : tool === 'calibrate'
           ? draft.length === 0
@@ -532,7 +635,11 @@ export default function PlanViewer({ sheet }: Props) {
           className="pointer-events-none absolute top-3 left-1/2 max-w-[90%] -translate-x-1/2 rounded bg-black/70 px-3 py-1.5 text-center text-sm text-white"
         >
           {hint}
-          <span className="text-white/60"> · Space+drag to pan · Esc to cancel</span>
+          <span className="text-white/60">
+            {' · Space+drag to pan'}
+            {tool !== 'select' || cutoutTarget ? ' · Esc to cancel' : ''}
+          </span>
+          {notice && <div className="mt-1 text-amber-300">⚠ {notice}</div>}
           {noScaleWarning && (
             <div className="mt-1 text-amber-300">
               ⚠ No scale on this sheet — these shapes won’t count in totals until you calibrate.
