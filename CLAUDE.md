@@ -96,8 +96,8 @@ A browser-based PDF takeoff and markup tool for construction plans (architectura
 
 ## Hosting
 - Code lives in a **private GitHub repo**.
-- **Live at https://planmeasure.jordan-hyslop97.workers.dev** — deployed on Cloudflare (as a Worker serving static assets) connected to the repo; every push to `main` redeploys (build command `npm run build`, output folder `dist`).
-- Optionally protect the site with **Cloudflare Access** so only company email addresses can open it.
+- **Live at https://cyclomeasure.space** (custom domain, bought through Cloudflare; also reachable at https://planmeasure.jordan-hyslop97.workers.dev). Deployed on Cloudflare as a Worker serving static assets, connected to the repo; every push to `main` redeploys (build command `npm run build`, output folder `dist`). Staff should use **cyclomeasure.space only** — projects are saved per web address, so work done at the workers.dev address won't appear there.
+- Protected with **Cloudflare Access** (Zero Trust team `cyclo-group`): only `@cyclogroup.com.au` emails can open it, signing in with an emailed one-time PIN (no Cloudflare or GitHub account needed); 7-day sessions. Any new address must be added to the Access policy before staff use it.
 - Deploy settings are in the repo: `.node-version` (22), `public/_headers` (Content-Security-Policy: the site only loads its own files and sends data nowhere; caching). If a new feature needs to load anything from another site, the CSP must be updated — keep everything self-hosted instead where possible.
 - Phase 7 (CSV/Excel quantities) was skipped by Jordan — not needed for now.
 

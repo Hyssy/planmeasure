@@ -29,7 +29,7 @@ Put sample PDFs in `test-plans/`. That folder is git-ignored so client drawings 
 ## Deploying (Cloudflare Pages)
 
 The site is static files, deployed by Cloudflare straight from this GitHub repo.
-Live: https://planmeasure.jordan-hyslop97.workers.dev
+Live: https://cyclomeasure.space (also https://planmeasure.jordan-hyslop97.workers.dev)
 Every push to `main` publishes a new version automatically.
 
 - Build command: `npm run build`
