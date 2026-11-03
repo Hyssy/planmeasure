@@ -41,7 +41,9 @@ A browser-based PDF takeoff and markup tool for construction plans (architectura
   - If multiple scales appear on one sheet (several viewports), flag it and let the user choose, or set a scale per region.
   - Detected scale is a **suggestion**. Show it clearly as "Detected — please verify".
 - **Calibrate tool**: user clicks two points on a known dimension and types the real length. This always overrides detection.
-- Show a warning badge on any sheet with no confirmed scale. Block takeoffs on unscaled sheets, or mark them clearly.
+- Show a warning badge on any sheet with no confirmed scale.
+- **Takeoffs on unscaled sheets are allowed but marked clearly** (decided by Jordan): shapes can be drawn, show "No scale", and are **left out of totals** until the sheet has a scale. Quantities always recompute from the sheet's current scale.
+- **Unverified (detected) scales**: takeoffs count in totals but are flagged "unverified scale" until the sheet is confirmed or calibrated (decided by Jordan).
 - Display units: mm, m, m² (Australian metric). Round sensibly (lengths 2 dp in m, areas 2 dp in m²).
 - Write unit tests for the scale maths and the area/length calculations.
 
