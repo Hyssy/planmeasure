@@ -23,10 +23,11 @@ import {
   type ScaleCandidate,
 } from './lib/scale'
 import { detectSheetLabel } from './lib/sheetLabel'
+import { MARKUP_COLOURS, type Markup, type MarkupType } from './lib/markup'
 import { ITEM_COLOURS, KIND_LABEL, type Item, type SheetScaleInfo, type Takeoff, type TakeoffKind } from './lib/takeoff'
 
 
-export type Tool = 'select' | 'pan' | 'calibrate' | 'measure' | TakeoffKind
+export type Tool = 'select' | 'pan' | 'calibrate' | 'measure' | 'markup' | TakeoffKind
 
 export const TAKEOFF_TOOLS: TakeoffKind[] = ['linear', 'area', 'perimeter', 'count']
 
@@ -47,6 +48,7 @@ export function isTakeoffTool(tool: Tool): tool is TakeoffKind {
 interface Snapshot {
   items: Item[]
   takeoffs: Takeoff[]
+  markups: Markup[]
 }
 const HISTORY_LIMIT = 200
 
@@ -163,6 +165,21 @@ interface AppState {
   checkpoint: () => void
   undo: () => void
   redo: () => void
+
+  // ---- Markup ----
+  markups: Markup[]
+  selectedMarkupId: string | null
+  markupOptions: { type: MarkupType; colour: string; width: number; fontSize: number }
+  setMarkupOptions: (patch: Partial<AppState['markupOptions']>) => void
+  addMarkup: (m: Omit<Markup, 'id'>) => string
+  updateMarkup: (id: string, patch: Partial<Omit<Markup, 'id' | 'sheetId'>>, recordUndo?: boolean) => void
+  deleteMarkup: (id: string) => void
+  selectMarkup: (id: string | null) => void
+
+  // ---- Layers ----
+  showTakeoffs: boolean
+  showMarkups: boolean
+  setLayerVisible: (layer: 'takeoffs' | 'markups', visible: boolean) => void
 }
 
 /** The sheet's scale in the form quantity maths needs. */
@@ -220,8 +237,10 @@ function emptyProject(): Partial<AppState> {
     files: [],
     items: [],
     takeoffs: [],
+    markups: [],
     activeItemId: null,
     selectedTakeoffId: null,
+    selectedMarkupId: null,
     cutoutFor: null,
     past: [],
     future: [],
@@ -242,12 +261,13 @@ export function toProjectData(s: AppState): ProjectData {
     detections: s.detections,
     items: s.items,
     takeoffs: s.takeoffs,
+    markups: s.markups,
     selectedSheetId: s.selectedSheetId,
   }
 }
 
 function snap(s: AppState): Snapshot {
-  return { items: s.items, takeoffs: s.takeoffs }
+  return { items: s.items, takeoffs: s.takeoffs, markups: s.markups }
 }
 
 /** Push the current takeoff data onto the undo stack (and clear redo). */
@@ -260,6 +280,7 @@ function keepValidRefs(s: AppState, next: Snapshot): Partial<AppState> {
   return {
     activeItemId: next.items.some((i) => i.id === s.activeItemId) ? s.activeItemId : null,
     selectedTakeoffId: next.takeoffs.some((t) => t.id === s.selectedTakeoffId) ? s.selectedTakeoffId : null,
+    selectedMarkupId: next.markups.some((m) => m.id === s.selectedMarkupId) ? s.selectedMarkupId : null,
     cutoutFor: null,
   }
 }
@@ -386,6 +407,7 @@ export const useApp = create<AppState>((set, get) => ({
         detections: data.detections as AppState['detections'],
         items: data.items,
         takeoffs: data.takeoffs,
+        markups: data.markups ?? [],
         selectedSheetId: sheets.some((sh) => sh.id === data.selectedSheetId) ? data.selectedSheetId : (sheets[0]?.id ?? null),
         restoring: false,
         loading: false,
@@ -545,7 +567,12 @@ export const useApp = create<AppState>((set, get) => ({
       selectedTakeoffId: s.selectedTakeoffId === id ? null : s.selectedTakeoffId,
     })),
 
-  selectTakeoff: (id) => set((s) => ({ selectedTakeoffId: id, cutoutFor: id === s.cutoutFor ? s.cutoutFor : null })),
+  selectTakeoff: (id) =>
+    set((s) => ({
+      selectedTakeoffId: id,
+      selectedMarkupId: id ? null : s.selectedMarkupId,
+      cutoutFor: id === s.cutoutFor ? s.cutoutFor : null,
+    })),
 
   startCutout: (takeoffId) => set({ cutoutFor: takeoffId, selectedTakeoffId: takeoffId, tool: 'select' }),
   cancelCutout: () => set({ cutoutFor: null }),
@@ -576,6 +603,35 @@ export const useApp = create<AppState>((set, get) => ({
       if (!next) return {}
       return { ...next, ...keepValidRefs(s, next), future: s.future.slice(0, -1), past: [...s.past, snap(s)] }
     }),
+
+  markups: [],
+  selectedMarkupId: null,
+  markupOptions: { type: 'cloud', colour: MARKUP_COLOURS[0], width: 3, fontSize: 20 },
+  setMarkupOptions: (patch) => set((s) => ({ markupOptions: { ...s.markupOptions, ...patch } })),
+  addMarkup: (m) => {
+    const id = newId('m')
+    set((s) => ({ ...record(s), markups: [...s.markups, { ...m, id }] }))
+    return id
+  },
+  updateMarkup: (id, patch, recordUndo = true) =>
+    set((s) => ({
+      ...(recordUndo ? record(s) : {}),
+      markups: s.markups.map((m) => (m.id === id ? { ...m, ...patch } : m)),
+    })),
+  deleteMarkup: (id) =>
+    set((s) => ({
+      ...record(s),
+      markups: s.markups.filter((m) => m.id !== id),
+      selectedMarkupId: s.selectedMarkupId === id ? null : s.selectedMarkupId,
+    })),
+  selectMarkup: (id) => set({ selectedMarkupId: id, selectedTakeoffId: id ? null : get().selectedTakeoffId, cutoutFor: null }),
+
+  showTakeoffs: true,
+  showMarkups: true,
+  setLayerVisible: (layer, visible) =>
+    set(layer === 'takeoffs'
+      ? { showTakeoffs: visible, ...(visible ? {} : { selectedTakeoffId: null, cutoutFor: null }) }
+      : { showMarkups: visible, ...(visible ? {} : { selectedMarkupId: null }) }),
 
   setLabel: (sheetId, number, title) =>
     set((s) => ({

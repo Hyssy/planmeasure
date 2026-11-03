@@ -8,7 +8,7 @@ import Toolbar from './components/Toolbar'
 import { DRAW_STYLES, useApp, type Tool } from './store'
 
 const TOOL_KEYS: Record<string, Tool> = {
-  v: 'select', h: 'pan', c: 'calibrate', m: 'measure', l: 'linear', a: 'area', p: 'perimeter', n: 'count',
+  v: 'select', h: 'pan', c: 'calibrate', m: 'measure', l: 'linear', a: 'area', p: 'perimeter', n: 'count', k: 'markup',
 }
 
 export default function App() {

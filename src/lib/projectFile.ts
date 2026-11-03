@@ -3,6 +3,7 @@
  * PDFs added) into an exported .json project file.
  */
 import type { SheetMeta } from './pdf'
+import type { Markup } from './markup'
 import type { Item, Takeoff } from './takeoff'
 
 export const PROJECT_FORMAT = 'planmeasure-project'
@@ -33,6 +34,8 @@ export interface ProjectData {
   detections: Record<string, unknown>
   items: Item[]
   takeoffs: Takeoff[]
+  /** added after the first release — older files have none */
+  markups?: Markup[]
   selectedSheetId: string | null
 }
 

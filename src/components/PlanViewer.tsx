@@ -7,6 +7,9 @@ import { distanceToPolyline, pointInPolygon, polygonAreaPt2, rectCorners, simpli
 import { formatQuantity, ITEM_COLOURS, KIND_LABEL, takeoffQuantity, type Takeoff, type TakeoffKind } from '../lib/takeoff'
 import { isTakeoffTool, scaleInfo, useApp, type DrawStyle } from '../store'
 import TakeoffLayer, { type TakeoffDraft } from './TakeoffLayer'
+import MarkupLayer from './MarkupLayer'
+import { measureScreenText } from '../lib/measureText'
+import { markupHandles, markupPrimitives, type Markup, type MarkupType } from '../lib/markup'
 import CalibrateDialog from './CalibrateDialog'
 import MeasureOverlay, { type OverlayLine } from './MeasureOverlay'
 
@@ -205,6 +208,18 @@ export default function PlanViewer({ sheet }: Props) {
   const checkpoint = useApp((s) => s.checkpoint)
   const cutoutFor = useApp((s) => s.cutoutFor)
   const drawStyles = useApp((s) => s.drawStyles)
+  const allMarkups = useApp((s) => s.markups)
+  const selectedMarkupId = useApp((s) => s.selectedMarkupId)
+  const markupOptions = useApp((s) => s.markupOptions)
+  const addMarkup = useApp((s) => s.addMarkup)
+  const updateMarkup = useApp((s) => s.updateMarkup)
+  const deleteMarkup = useApp((s) => s.deleteMarkup)
+  const selectMarkup = useApp((s) => s.selectMarkup)
+  const showTakeoffs = useApp((s) => s.showTakeoffs)
+  const showMarkups = useApp((s) => s.showMarkups)
+  const markups = useMemo(() => allMarkups.filter((m) => m.sheetId === sheet.id), [allMarkups, sheet.id])
+  /** Text markup being typed: a new one at `at`, or an existing one (`id`). */
+  const [textEdit, setTextEdit] = useState<{ id?: string; at: Point; text: string } | null>(null)
   const addCutout = useApp((s) => s.addCutout)
   const cancelCutout = useApp((s) => s.cancelCutout)
   const [notice, setNotice] = useState<string | null>(null)
@@ -270,6 +285,40 @@ export default function PlanViewer({ sheet }: Props) {
     setCursor(null)
   }
 
+  /** Finish a markup being drawn (two corners/ends, or a pen stroke). */
+  const finishMarkup = (pts: Point[]) => {
+    setDraft([])
+    setCursor(null)
+    const v = viewRef.current
+    const type = markupOptions.type
+    if (!v || pts.length < 2) return
+    // too small to be deliberate (a click without a drag)
+    if (pts.every((q) => distancePt(q, pts[0]) * v.scale < 4)) return
+    addMarkup({ sheetId: sheet.id, type, points: pts, colour: markupOptions.colour, width: markupOptions.width })
+  }
+
+  const commitText = () => {
+    const t = textEdit
+    setTextEdit(null)
+    if (!t) return
+    const text = t.text.replace(/\s+$/, '')
+    if (t.id) {
+      if (!text.trim()) deleteMarkup(t.id)
+      else updateMarkup(t.id, { text })
+    } else if (text.trim()) {
+      const id = addMarkup({
+        sheetId: sheet.id,
+        type: 'text',
+        points: [t.at],
+        colour: markupOptions.colour,
+        width: markupOptions.width,
+        text,
+        fontSize: markupOptions.fontSize,
+      })
+      selectMarkup(id)
+    }
+  }
+
   // Space held = temporary pan; keyboard shortcuts for drawing.
   const spaceHeld = useRef(false)
   const [spaceDown, setSpaceDown] = useState(false)
@@ -279,7 +328,10 @@ export default function PlanViewer({ sheet }: Props) {
       setNotice(null)
       if (draft.length || measured || calibLine) resetDrawing()
       else if (cutoutFor) cancelCutout()
-      else selectTakeoff(null)
+      else {
+        selectTakeoff(null)
+        selectMarkup(null)
+      }
     } else if (e.key === 'Enter' && draft.length) {
       e.preventDefault()
       finishShape()
@@ -289,6 +341,9 @@ export default function PlanViewer({ sheet }: Props) {
     } else if ((e.key === 'Delete' || e.key === 'Backspace') && !draft.length && selectedId) {
       e.preventDefault()
       deleteTakeoff(selectedId)
+    } else if ((e.key === 'Delete' || e.key === 'Backspace') && !draft.length && selectedMarkupId) {
+      e.preventDefault()
+      deleteMarkup(selectedMarkupId)
     }
   }
   // Keep the window listener pointing at the latest handler (it reads current drawing state).
@@ -334,10 +389,29 @@ export default function PlanViewer({ sheet }: Props) {
     return p
   }
 
-  /** The topmost shape under a page point, if any. */
+  /** The topmost markup under a page point, if any. */
+  const hitMarkup = (p: Point): string | null => {
+    const v = viewRef.current
+    if (!v || !showMarkups) return null
+    for (let i = markups.length - 1; i >= 0; i--) {
+      const m = markups[i]
+      const tol = 7 / v.scale + m.width / 2
+      for (const prim of markupPrimitives(m, measureScreenText)) {
+        if (prim.kind === 'text' && prim.box) {
+          if (p.x >= prim.at.x && p.x <= prim.at.x + prim.box.width && p.y >= prim.at.y && p.y <= prim.at.y + prim.box.height) return m.id
+        } else if (prim.kind === 'path') {
+          if (prim.closed && prim.fill && prim.rings.some((r) => pointInPolygon(p, r))) return m.id
+          if (prim.rings.some((r) => distanceToPolyline(p, r, prim.closed) <= tol)) return m.id
+        }
+      }
+    }
+    return null
+  }
+
+  /** The topmost takeoff shape under a page point, if any. */
   const hitTest = (p: Point): string | null => {
     const v = viewRef.current
-    if (!v) return null
+    if (!v || !showTakeoffs) return null
     const tol = 8 / v.scale
     for (let i = takeoffs.length - 1; i >= 0; i--) {
       const t = takeoffs[i]
@@ -369,13 +443,23 @@ export default function PlanViewer({ sheet }: Props) {
     return null
   }
 
+  /** Which resize handle of the selected markup is under a page point. */
+  const markupHandleAt = (p: Point): number | null => {
+    const v = viewRef.current
+    const m = markups.find((x) => x.id === selectedMarkupId)
+    if (!v || !m) return null
+    const index = markupHandles(m).findIndex((q) => distancePt(p, q) * v.scale <= 7)
+    return index >= 0 ? index : null
+  }
+
   // ---- Editing shapes: drag a handle to reshape, or the shape to move it ----
   const edit = useRef<{
     pointerId: number
-    takeoff: Takeoff
     start: Point
-    handle: { ring: number; index: number } | null
     moved: boolean
+    target:
+      | { kind: 'takeoff'; takeoff: Takeoff; handle: { ring: number; index: number } | null }
+      | { kind: 'markup'; markup: Markup; handle: number | null }
   } | null>(null)
 
   const editMove = (e: React.PointerEvent) => {
@@ -389,12 +473,18 @@ export default function PlanViewer({ sheet }: Props) {
       checkpoint() // one undo step per drag
       d.moved = true
     }
-    const { takeoff: t, handle } = d
+    const shift = (ring: Point[]) => ring.map((q) => ({ x: q.x + dx, y: q.y + dy }))
+    if (d.target.kind === 'markup') {
+      const { markup: m, handle: h } = d.target
+      const end = h === null ? undefined : pagePointFromEvent(e, m.points[1 - h])
+      updateMarkup(m.id, { points: h === null ? shift(m.points) : m.points.map((q, i) => (i === h ? end! : q)) }, false)
+      return true
+    }
+    const { takeoff: t, handle } = d.target
     if (handle) {
       const moveIn = (ring: Point[], r: number) => (r === handle.ring ? ring.map((q, i) => (i === handle.index ? p : q)) : ring)
       updateTakeoff(t.id, { points: moveIn(t.points, -1), holes: t.holes.map((h, i) => moveIn(h, i)) }, false)
     } else {
-      const shift = (ring: Point[]) => ring.map((q) => ({ x: q.x + dx, y: q.y + dy }))
       updateTakeoff(t.id, { points: shift(t.points), holes: t.holes.map(shift) }, false)
     }
     return true
@@ -431,14 +521,50 @@ export default function PlanViewer({ sheet }: Props) {
     }
 
     if (tool === 'select') {
-      const handle = handleAt(p)
-      const id = handle ? selectedId : hitTest(p)
+      const capture = () => (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId)
+      // Handles of the current selection first, then markups (drawn on top), then takeoffs.
+      const mHandle = markupHandleAt(p)
+      const tHandle = mHandle === null ? handleAt(p) : null
+      const markupId = mHandle !== null ? selectedMarkupId : tHandle ? null : hitMarkup(p)
+      if (markupId) {
+        selectMarkup(markupId)
+        const m = markups.find((x) => x.id === markupId)!
+        capture()
+        edit.current = { pointerId: e.pointerId, start: p, moved: false, target: { kind: 'markup', markup: m, handle: mHandle } }
+        return
+      }
+      const id = tHandle ? selectedId : hitTest(p)
       selectTakeoff(id)
+      if (!id) selectMarkup(null)
       const t = takeoffs.find((x) => x.id === id)
       if (t) {
-        ;(e.currentTarget as HTMLElement).setPointerCapture(e.pointerId)
-        edit.current = { pointerId: e.pointerId, takeoff: t, start: p, handle, moved: false }
+        capture()
+        edit.current = { pointerId: e.pointerId, start: p, moved: false, target: { kind: 'takeoff', takeoff: t, handle: tHandle } }
       }
+      return
+    }
+
+    if (tool === 'markup') {
+      const type = markupOptions.type
+      if (type === 'text') {
+        setTextEdit({ at: p, text: '' })
+        return
+      }
+      if (type === 'pen') {
+        ;(e.currentTarget as HTMLElement).setPointerCapture(e.pointerId)
+        freehand.current = { pointerId: e.pointerId }
+        setDraft([p])
+        setCursor(null)
+        return
+      }
+      if (draft.length === 1) {
+        finishMarkup([draft[0], pagePointFromEvent(e, type === 'line' || type === 'arrow' ? draft[0] : undefined)])
+        return
+      }
+      ;(e.currentTarget as HTMLElement).setPointerCapture(e.pointerId)
+      rectDrag.current = { pointerId: e.pointerId, sx: e.clientX, sy: e.clientY }
+      setDraft([p])
+      setCursor(p)
       return
     }
 
@@ -494,12 +620,15 @@ export default function PlanViewer({ sheet }: Props) {
   }
   const onDoubleClick = () => {
     if (cutoutTarget || tool === 'linear' || tool === 'area' || tool === 'perimeter') finishShape()
+    const m = markups.find((x) => x.id === selectedMarkupId)
+    if (tool === 'select' && m?.type === 'text') setTextEdit({ id: m.id, at: m.points[0], text: m.text ?? '' })
   }
   const [hoverHandle, setHoverHandle] = useState(false)
   const onPointerMove = (e: React.PointerEvent) => {
     if (editMove(e)) return
     if (tool === 'select' && viewRef.current) {
-      const over = handleAt(pagePointFromEvent(e)) !== null
+      const q = pagePointFromEvent(e)
+      const over = handleAt(q) !== null || markupHandleAt(q) !== null
       if (over !== hoverHandle) setHoverHandle(over)
     }
     const d = drag.current
@@ -515,7 +644,13 @@ export default function PlanViewer({ sheet }: Props) {
       return
     }
     if (rectDrag.current && viewRef.current) {
-      setCursor(pagePointFromEvent(e))
+      const straight = tool === 'markup' && (markupOptions.type === 'line' || markupOptions.type === 'arrow')
+      setCursor(pagePointFromEvent(e, straight ? draft[0] : undefined))
+      return
+    }
+    if (tool === 'markup' && draft.length === 1 && viewRef.current) {
+      const straight = markupOptions.type === 'line' || markupOptions.type === 'arrow'
+      setCursor(pagePointFromEvent(e, straight ? draft[0] : undefined))
       return
     }
     if (tool !== 'pan' && (tool !== 'select' || cutoutTarget) && draft.length > 0 && viewRef.current) {
@@ -529,6 +664,10 @@ export default function PlanViewer({ sheet }: Props) {
       // Drop points that add nothing (within ~¼ pixel of a straight line), then finish.
       // Simplifying always trims slightly inside curves, so keep the tolerance tight.
       const pts = v ? simplifyPath(draft, 0.25 / v.scale) : draft
+      if (tool === 'markup') {
+        finishMarkup(pts)
+        return
+      }
       const big = v && pts.length >= minPoints && pts.some((q) => distancePt(q, pts[0]) * v.scale > 4)
       if (big) finishShape(pts)
       else {
@@ -541,7 +680,11 @@ export default function PlanViewer({ sheet }: Props) {
       const d = rectDrag.current
       rectDrag.current = null
       // Dragged: finish on release. Just clicked: wait for the opposite corner.
-      if (Math.hypot(e.clientX - d.sx, e.clientY - d.sy) > 4 && draft[0]) finishShape(rectCorners(draft[0], pagePointFromEvent(e)))
+      const dragged = Math.hypot(e.clientX - d.sx, e.clientY - d.sy) > 4 && draft[0]
+      if (dragged && tool === 'markup') {
+        const straight = markupOptions.type === 'line' || markupOptions.type === 'arrow'
+        finishMarkup([draft[0], pagePointFromEvent(e, straight ? draft[0] : undefined)])
+      } else if (dragged) finishShape(rectCorners(draft[0], pagePointFromEvent(e)))
       return
     }
     if (edit.current?.pointerId === e.pointerId) edit.current = null
@@ -602,6 +745,18 @@ export default function PlanViewer({ sheet }: Props) {
           return { kind: tool, colour, points: draft, cursor, label: qtyText({ points: cursor ? [...draft, cursor] : draft, holes: [] }, tool) }
         })()
       : null
+  const markupDraft: Markup | null =
+    tool === 'markup' && draft.length > 0 && markupOptions.type !== 'text'
+      ? {
+          id: 'draft',
+          sheetId: sheet.id,
+          type: markupOptions.type,
+          points: markupOptions.type === 'pen' ? draft : [draft[0], cursor ?? draft[0]],
+          colour: markupOptions.colour,
+          width: markupOptions.width,
+        }
+      : null
+  const selectedMarkup = markups.find((m) => m.id === selectedMarkupId)
   const selected = takeoffs.find((t) => t.id === selectedId)
   const selectedKind = selected ? itemsById.get(selected.itemId)?.kind : undefined
   const selectedLabel = selected && selectedKind ? qtyText(selected, selectedKind) : undefined
@@ -612,7 +767,9 @@ export default function PlanViewer({ sheet }: Props) {
       ? 'cursor-grab'
       : cutoutTarget
         ? 'cursor-crosshair'
-        : tool === 'select'
+        : tool === 'markup' && markupOptions.type === 'text'
+          ? 'cursor-text'
+          : tool === 'select'
         ? hoverHandle
           ? 'cursor-move'
           : 'cursor-default'
@@ -625,10 +782,16 @@ export default function PlanViewer({ sheet }: Props) {
       : 'Click to add corners · click the first point or press Enter to finish'
     : tool === 'pan'
       ? null
-      : tool === 'select'
-        ? selected
+      : tool === 'markup'
+        ? MARKUP_HINT[markupOptions.type]
+        : tool === 'select'
+        ? selectedMarkup
+          ? selectedMarkup.type === 'text'
+            ? 'Drag to move · double-click to edit the text · Delete to remove'
+            : 'Drag to move' + (markupHandles(selectedMarkup).length ? ', or a handle to resize' : '') + ' · Delete to remove'
+          : selected
           ? 'Drag a corner to reshape, or the shape to move it · Delete to remove · Esc to deselect'
-          : 'Select: click a shape'
+          : 'Select: click a shape or markup'
         : tool === 'calibrate'
           ? draft.length === 0
             ? 'Calibrate: click one end of a dimension you know'
@@ -637,7 +800,7 @@ export default function PlanViewer({ sheet }: Props) {
             ? draft.length === 0
               ? 'Measure: click the start point'
               : 'Click the end point (hold Shift for straight)'
-            : tool === 'count'
+            : tool === 'count' || !isTakeoffTool(tool)
               ? `Count into ${itemName}: click each one`
               : drawStyle === 'freehand'
                 ? `${KIND_LABEL[tool]} into ${itemName}: hold the mouse button down and trace${isClosedTool ? ' round the shape (it closes itself)' : ''}`
@@ -690,18 +853,43 @@ export default function PlanViewer({ sheet }: Props) {
 
       {view && boxSize.w > 0 && (
         <MeasureOverlay width={boxSize.w} height={boxSize.h} view={view} lines={overlayLines}>
-          <TakeoffLayer
-            scale={view.scale}
-            takeoffs={takeoffs}
-            items={itemsById}
-            selectedId={selectedId}
-            selectedLabel={selectedLabel}
-            draft={takeoffDraft}
-          />
+          {showTakeoffs && (
+            <TakeoffLayer
+              scale={view.scale}
+              takeoffs={takeoffs}
+              items={itemsById}
+              selectedId={selectedId}
+              selectedLabel={selectedLabel}
+              draft={takeoffDraft}
+            />
+          )}
+          {showMarkups && (
+            <MarkupLayer
+              scale={view.scale}
+              markups={markups}
+              selectedId={selectedMarkupId}
+              draft={markupDraft}
+              hiddenId={textEdit?.id}
+            />
+          )}
         </MeasureOverlay>
       )}
 
-      {hint && !calibLine && (
+      {textEdit && view && (
+        <TextEditor
+          key={textEdit.id ?? 'new'}
+          value={textEdit.text}
+          onChange={(text) => setTextEdit({ ...textEdit, text })}
+          onCommit={commitText}
+          onCancel={() => setTextEdit(null)}
+          left={view.x + textEdit.at.x * view.scale}
+          top={view.y + textEdit.at.y * view.scale}
+          fontSize={(textEdit.id ? (markups.find((m) => m.id === textEdit.id)?.fontSize ?? 14) : markupOptions.fontSize) * view.scale}
+          colour={textEdit.id ? (markups.find((m) => m.id === textEdit.id)?.colour ?? '#111') : markupOptions.colour}
+        />
+      )}
+
+      {hint && !calibLine && !textEdit && (
         <div
           data-testid="tool-hint"
           className="pointer-events-none absolute top-3 left-1/2 max-w-[90%] -translate-x-1/2 rounded bg-black/70 px-3 py-1.5 text-center text-sm text-white"
@@ -779,5 +967,65 @@ function ZoomButton(props: { label: string; onClick: () => void; children: React
     >
       {props.children}
     </button>
+  )
+}
+
+const MARKUP_HINT: Record<MarkupType, string> = {
+  cloud: 'Cloud: drag a box round the area to cloud',
+  rectangle: 'Rectangle: drag from corner to corner',
+  ellipse: 'Ellipse: drag a box for the ellipse',
+  arrow: 'Arrow: drag from the tail to the point (Shift for straight)',
+  line: 'Line: drag from end to end (Shift for straight)',
+  pen: 'Pen: hold the mouse button down and draw',
+  text: 'Text: click where the text should go, type, then press Enter (Shift+Enter for a new line)',
+  highlight: 'Highlight: drag over the area to highlight',
+}
+
+/** Typing box for text markups, positioned over the plan. */
+function TextEditor(props: {
+  value: string
+  onChange: (v: string) => void
+  onCommit: () => void
+  onCancel: () => void
+  left: number
+  top: number
+  fontSize: number
+  colour: string
+}) {
+  const rows = Math.max(1, props.value.split('\n').length)
+  return (
+    <textarea
+      autoFocus
+      data-testid="text-editor"
+      value={props.value}
+      onChange={(e) => props.onChange(e.target.value)}
+      onPointerDown={(e) => e.stopPropagation()}
+      onBlur={props.onCommit}
+      onKeyDown={(e) => {
+        e.stopPropagation()
+        if (e.key === 'Enter' && !e.shiftKey) {
+          e.preventDefault()
+          props.onCommit()
+        } else if (e.key === 'Escape') {
+          e.preventDefault()
+          props.onCancel()
+        }
+      }}
+      rows={rows}
+      placeholder="Type…"
+      className="absolute z-20 resize-none rounded-sm border-2 bg-white/95 outline-none"
+      style={{
+        left: props.left,
+        top: props.top,
+        fontSize: Math.max(10, props.fontSize),
+        lineHeight: 1.2,
+        color: props.colour,
+        borderColor: props.colour,
+        padding: Math.max(2, props.fontSize * 0.3),
+        fontFamily: 'Arial, Helvetica, sans-serif',
+        minWidth: 160,
+        width: Math.max(160, Math.max(...props.value.split('\n').map((l) => l.length)) * props.fontSize * 0.6 + 24),
+      }}
+    />
   )
 }

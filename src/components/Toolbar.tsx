@@ -17,6 +17,7 @@ const TOOL_GROUPS: { id: Tool; label: string; key: string; hint: string }[][] = 
     { id: 'perimeter', label: 'Perimeter', key: 'P', hint: 'Take off the edge length of a room' },
     { id: 'count', label: 'Count', key: 'N', hint: 'Count items: lights, doors, fixtures' },
   ],
+  [{ id: 'markup', label: 'Markup', key: 'K', hint: 'Clouds, arrows, text, highlights and more' }],
 ]
 
 export default function Toolbar() {
@@ -74,6 +75,8 @@ export default function Toolbar() {
         ))}
         <div className="mx-1 h-6 w-px bg-neutral-200" />
         <UndoRedo />
+        <div className="mx-1 h-6 w-px bg-neutral-200" />
+        <Layers />
       </div>
       <span className="ml-auto hidden text-xs whitespace-nowrap text-neutral-500 2xl:inline">
         Scroll to zoom · Space+drag to pan · files stay on your computer
@@ -96,5 +99,23 @@ function UndoRedo() {
         Redo
       </button>
     </>
+  )
+}
+
+function Layers() {
+  const showTakeoffs = useApp((s) => s.showTakeoffs)
+  const showMarkups = useApp((s) => s.showMarkups)
+  const setLayerVisible = useApp((s) => s.setLayerVisible)
+  return (
+    <div className="flex items-center gap-2 text-sm whitespace-nowrap" title="Show or hide each layer (also sets what goes in a PDF export)">
+      <label className="flex items-center gap-1">
+        <input type="checkbox" checked={showTakeoffs} onChange={(e) => setLayerVisible('takeoffs', e.target.checked)} />
+        Takeoffs
+      </label>
+      <label className="flex items-center gap-1">
+        <input type="checkbox" checked={showMarkups} onChange={(e) => setLayerVisible('markups', e.target.checked)} />
+        Markups
+      </label>
+    </div>
   )
 }
