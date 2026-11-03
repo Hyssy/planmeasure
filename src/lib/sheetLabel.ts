@@ -252,22 +252,33 @@ const NOT_A_TITLE = [
   /^[\d\s.,:/-]+$/, // only numbers
   /@|www\.|\.com|\.au\b|https?:/i, // contact details
   /^(NOT FOR CONSTRUCTION|FOR CONSTRUCTION|PRELIMINARY|FOR APPROVAL|FOR TENDER|DRAFT|COPYRIGHT)/i,
+  /^(N\.?T\.?S\.?|NOT TO SCALE)$/i,
 ]
+
+function usableTitle(text: string): boolean {
+  return (
+    text.length >= 4 &&
+    text.length <= 60 &&
+    /[A-Z]{3,}/i.test(text) &&
+    !isFieldLabel(text) &&
+    !NOT_A_TITLE.some((re) => re.test(text))
+  )
+}
 
 /** Near an unlabelled sheet number, the biggest piece of wording is usually the title. */
 function findProminentTitle(phrases: Phrase[], near: Phrase, number: string, pageW: number): string | null {
+  // Number and title on one line: "A-101 GROUND FLOOR PLAN"
+  const rest = tidyTitle(near.text.replace(new RegExp(`^.*?\\b${escapeRe(number)}\\b`, 'i'), ''))
+  if (rest && usableTitle(rest)) return rest
+
   const reach = pageW * 0.25
   const options = phrases.filter(
     (p) =>
       p !== near &&
       Math.abs(p.x - near.x) < reach &&
       Math.abs(p.y - near.y) < reach &&
-      p.text.length >= 4 &&
-      p.text.length <= 60 &&
-      /[A-Z]{3,}/i.test(p.text) &&
-      !p.text.toUpperCase().includes(number.toUpperCase()) &&
-      !isFieldLabel(p.text) &&
-      !NOT_A_TITLE.some((re) => re.test(p.text)),
+      usableTitle(p.text) &&
+      !p.text.toUpperCase().includes(number.toUpperCase()),
   )
   options.sort((a, b) => b.size - a.size || dist(a, near) - dist(b, near))
   return options[0] ? tidyTitle(options[0].text) : null
@@ -288,6 +299,10 @@ export function labelFromFileName(fileName: string): SheetLabelGuess {
 }
 
 // ---------------------------------------------------------------------------
+
+function escapeRe(s: string): string {
+  return s.replace(/[.*+?^${}()|[\]\\-]/g, '\\$&')
+}
 
 function clean(token: string): string {
   return token.trim().replace(/[,;:)]$/, '').toUpperCase()

@@ -1,5 +1,6 @@
 import { create } from 'zustand'
-import { getPageText, loadPdfFile, renderThumbnail, type SheetMeta } from './lib/pdf'
+import { needsOcr, ocrSheetText } from './lib/ocr'
+import { getPageText, loadPdfFile, renderThumbnail, type PageText, type SheetMeta } from './lib/pdf'
 import {
   describeCandidate,
   distinctScales,
@@ -33,6 +34,11 @@ export interface ScaleDetection {
   candidates: ScaleCandidate[]
   /** scales for a different sheet size (e.g. "@ A1" on an A3 page) — must calibrate */
   mismatched: ScaleCandidate[]
+  /**
+   * OCR for sheets with no text layer: 'none' = not needed; 'pending'/'running'
+   * = in progress; 'done' = results came from OCR; 'failed' = OCR didn't work.
+   */
+  ocr: 'none' | 'pending' | 'running' | 'done' | 'failed'
 }
 
 /** A sheet's number and title — detected, then editable. Empty string = unknown. */
@@ -41,6 +47,8 @@ export interface SheetLabel {
   title: string
   /** true once the user has edited it */
   edited: boolean
+  /** true if read by OCR (less reliable — worth checking) */
+  fromOcr?: boolean
 }
 
 /** "A-101", or "Sheet 3" when no number is known. */
@@ -74,6 +82,40 @@ interface AppState {
 /** Scale for a 1:ratio drawing printed at its intended size on this page. */
 export function ratioScale(c: Pick<ScaleCandidate, 'ratio' | 'paper'>): { realMmPerPt: number; label: string } {
   return { realMmPerPt: mmPerPtFromRatio(c.ratio), label: describeCandidate(c) }
+}
+
+/**
+ * Work out a sheet's scale and label from its text (text layer or OCR) and
+ * merge them into state — without overwriting anything the user has set.
+ */
+function applyTextResults(
+  s: AppState,
+  sheet: SheetMeta,
+  text: PageText,
+  pagesInFile: number,
+  ocr: ScaleDetection['ocr'],
+): Partial<AppState> {
+  const found = distinctScales(findScaleCandidates(text.text))
+  const fits = (c: ScaleCandidate) => scaleSuitsPage(c, sheet.widthPt, sheet.heightPt)
+  const candidates = found.filter(fits)
+  const mismatched = found.filter((c) => !fits(c))
+  const guess = detectSheetLabel(text.items, sheet.widthPt, sheet.heightPt, sheet.fileName, pagesInFile)
+  const fromOcr = ocr === 'done'
+  const label: SheetLabel = { number: guess.number ?? '', title: guess.title ?? '', edited: false, fromOcr }
+
+  const detections = { ...s.detections, [sheet.id]: { done: true, candidates, mismatched, ocr } }
+  const labels = s.labels[sheet.id]?.edited ? s.labels : { ...s.labels, [sheet.id]: label }
+  // Exactly one scale found, and it suits this page size → suggest it (still needs verifying).
+  if (candidates.length === 1 && mismatched.length === 0 && !s.scales[sheet.id]) {
+    const scale: SheetScale = { ...ratioScale(candidates[0]), status: 'detected', source: 'detected' }
+    return { detections, labels, scales: { ...s.scales, [sheet.id]: scale } }
+  }
+  return { detections, labels }
+}
+
+function withOcrStatus(s: AppState, sheetId: string, ocr: ScaleDetection['ocr']): Partial<AppState> {
+  const d = s.detections[sheetId]
+  return d ? { detections: { ...s.detections, [sheetId]: { ...d, ocr } } } : {}
 }
 
 export const useApp = create<AppState>((set) => ({
@@ -111,40 +153,41 @@ export const useApp = create<AppState>((set) => ({
     }
     set({ loading: false })
 
-    // Scale detection: read each sheet's text (fast), then make thumbnails (slower).
+    // 1. Read each sheet's text layer (fast): scale and sheet label.
+    const forOcr: SheetMeta[] = []
     for (const sheet of added) {
-      let found: ScaleCandidate[] = []
-      let label: SheetLabel = { number: '', title: '', edited: false }
+      let text: PageText = { text: '', items: [] }
       try {
-        const { text, items } = await getPageText(sheet)
-        found = distinctScales(findScaleCandidates(text))
-        const pagesInFile = added.filter((a) => a.fileId === sheet.fileId).length
-        const guess = detectSheetLabel(items, sheet.widthPt, sheet.heightPt, sheet.fileName, pagesInFile)
-        label = { number: guess.number ?? '', title: guess.title ?? '', edited: false }
+        text = await getPageText(sheet)
       } catch (err) {
         console.error('Text extraction failed', sheet.id, err)
       }
-      const fits = (c: ScaleCandidate) => scaleSuitsPage(c, sheet.widthPt, sheet.heightPt)
-      const candidates = found.filter(fits)
-      const mismatched = found.filter((c) => !fits(c))
-      set((s) => {
-        const detections = { ...s.detections, [sheet.id]: { done: true, candidates, mismatched } }
-        const labels = s.labels[sheet.id]?.edited ? s.labels : { ...s.labels, [sheet.id]: label }
-        // Exactly one scale found, and it suits this page size → suggest it (still needs verifying).
-        if (candidates.length === 1 && mismatched.length === 0 && !s.scales[sheet.id]) {
-          const scale: SheetScale = { ...ratioScale(candidates[0]), status: 'detected', source: 'detected' }
-          return { detections, labels, scales: { ...s.scales, [sheet.id]: scale } }
-        }
-        return { detections, labels }
-      })
+      const pagesInFile = added.filter((a) => a.fileId === sheet.fileId).length
+      const ocr = needsOcr(text) ? 'pending' : 'none'
+      if (ocr === 'pending') forOcr.push(sheet)
+      set((s) => applyTextResults(s, sheet, text, pagesInFile, ocr))
     }
 
+    // 2. Thumbnails.
     for (const sheet of added) {
       try {
         const url = await renderThumbnail(sheet)
         set((s) => ({ thumbnails: { ...s.thumbnails, [sheet.id]: url } }))
       } catch (err) {
         console.error('Thumbnail failed', sheet.id, err)
+      }
+    }
+
+    // 3. OCR the title blocks of sheets with no text layer (slow — a few seconds each).
+    for (const sheet of forOcr) {
+      set((s) => withOcrStatus(s, sheet.id, 'running'))
+      try {
+        const text = await ocrSheetText(sheet)
+        const pagesInFile = added.filter((a) => a.fileId === sheet.fileId).length
+        set((s) => applyTextResults(s, sheet, text, pagesInFile, 'done'))
+      } catch (err) {
+        console.error('OCR failed', sheet.id, err)
+        set((s) => withOcrStatus(s, sheet.id, 'failed'))
       }
     }
   },

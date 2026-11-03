@@ -113,6 +113,18 @@ describe('title blocks without labels', () => {
     expect(detectSheetLabel(items, W, H)).toEqual({ number: 'DA02', title: 'SITE ANALYSIS' })
   })
 
+  it('splits a number and title written on one line', () => {
+    const items = [...planClutter, t('A-101 GROUND FLOOR PLAN', 1700, 1610, 14), t('SCALE 1:100 @ A1', 1700, 1630, 14)]
+    expect(detectSheetLabel(items, W, H)).toEqual({ number: 'A-101', title: 'GROUND FLOOR PLAN' })
+  })
+
+  it('never uses "NOT TO SCALE" as a title', () => {
+    const items = [t('SK-01 SKETCH', 1700, 1610, 14), t('NOT TO SCALE', 1700, 1630, 14)]
+    expect(detectSheetLabel(items, W, H)).toEqual({ number: 'SK-01', title: 'SKETCH' })
+    const alone = [t('SK-01', 2100, 1610, 20), t('NOT TO SCALE', 2000, 1640, 14)]
+    expect(detectSheetLabel(alone, W, H).title).toBeNull()
+  })
+
   it('does not mistake repeated door tags for a sheet number', () => {
     expect(detectSheetLabel(planClutter, W, H).number).toBeNull()
   })

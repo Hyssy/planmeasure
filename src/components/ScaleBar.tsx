@@ -15,6 +15,7 @@ export default function ScaleBar({ sheet }: { sheet: SheetMeta }) {
 
   const candidates = detection?.candidates ?? []
   const mismatched = detection?.mismatched ?? []
+  const ocrBusy = detection?.ocr === 'pending' || detection?.ocr === 'running'
   const calibrate = (
     <BarButton onClick={() => setTool('calibrate')} primary={!scale}>
       {scale?.source === 'calibrated' ? 'Calibrate again' : 'Calibrate'}
@@ -39,7 +40,9 @@ export default function ScaleBar({ sheet }: { sheet: SheetMeta }) {
     content = (
       <>
         <span className="rounded bg-amber-100 px-2 py-0.5 font-medium text-amber-900">{scale.label}</span>
-        <span className="text-amber-900">Detected — please verify</span>
+        <span className="text-amber-900">
+          Detected{detection?.ocr === 'done' ? ' by OCR' : ''} — please verify
+        </span>
         <span className="text-neutral-500">(measure a known dimension, or calibrate)</span>
         <div className="flex-1" />
         <BarButton onClick={() => confirmScale(sheet.id)} primary>
@@ -82,13 +85,17 @@ export default function ScaleBar({ sheet }: { sheet: SheetMeta }) {
     content = (
       <>
         <span className="font-medium text-amber-900">
-          ⚠ {detection?.done ? 'No scale set' : 'Looking for a scale…'}
+          ⚠ {!detection?.done || ocrBusy ? 'Looking for a scale…' : 'No scale set'}
         </span>
-        {detection?.done && (
-          <span className="text-neutral-500">
-            No scale was found in this sheet’s text. Calibrate from a known dimension.
-          </span>
-        )}
+        <span className="text-neutral-500">
+          {ocrBusy
+            ? 'This sheet’s text is flattened, so it’s being read with OCR. You can calibrate now if you like.'
+            : detection?.ocr === 'done' || detection?.ocr === 'failed'
+              ? 'This sheet’s text is flattened and OCR found no scale. Calibrate from a dimension line.'
+              : detection?.done
+                ? 'No scale was found in this sheet’s text. Calibrate from a known dimension.'
+                : null}
+        </span>
         <div className="flex-1" />
         {calibrate}
         {change}

@@ -90,8 +90,18 @@ function SheetItem({ sheet, index }: { sheet: SheetMeta; index: number }) {
               </span>
             </div>
             <div data-testid="sheet-title" className={`text-xs leading-snug ${label?.title ? 'text-neutral-800' : 'text-neutral-400 italic'}`}>
-              {label?.title || (detection?.done ? 'No title found' : 'Reading…')}
+              {label?.title ||
+                (!detection?.done
+                  ? 'Reading…'
+                  : detection.ocr === 'pending' || detection.ocr === 'running'
+                    ? 'Reading text (OCR)…'
+                    : detection.ocr === 'failed'
+                      ? 'Couldn’t read this sheet'
+                      : 'No title found')}
             </div>
+            {label?.fromOcr && !label.edited && (label.number || label.title) && (
+              <div className="text-[11px] text-amber-800">Read by OCR — please check</div>
+            )}
           </button>
           <button
             onClick={() => setEditing(true)}

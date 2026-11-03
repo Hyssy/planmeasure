@@ -30,7 +30,7 @@ A browser-based PDF takeoff and markup tool for construction plans (architectura
 - **pdf-lib** — export marked-up PDF
 - **SheetJS (xlsx)** — export quantities to Excel
 - **Tailwind CSS** — styling
-- Optional, later: **tesseract.js** for OCR on scanned plans with no text layer
+- **tesseract.js** — OCR for flattened/scanned sheets with no text layer (brought forward by Jordan; reads title-block areas only; engine and English model are served with the app, nothing fetched at runtime)
 
 ## Measurement rules (important — accuracy matters)
 - PDF units are points: 1 pt = 1/72 inch = 0.352778 mm.
@@ -79,7 +79,7 @@ A browser-based PDF takeoff and markup tool for construction plans (architectura
 6. **Markup**: markup tools + markup layer.
 7. **Exports**: CSV/Excel quantities, marked-up PDF.
 8. **Deploy**: Cloudflare Pages from the GitHub repo.
-9. **Nice-to-haves**: OCR for scanned sets, compare two revisions, print-ready quantity report.
+9. **Nice-to-haves**: compare two revisions, print-ready quantity report, whole-page OCR. (Title-block OCR for flattened sets was done after Phase 3.)
 
 ## Branding (decided — do later)
 - The app will be branded to the **Cyclo design system** on claude.ai: https://claude.ai/artifact/G2hkn8FLdfLgG4M7tJ1n7s (read its `project/README.md` and `project/tokens.json`).

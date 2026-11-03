@@ -26,5 +26,6 @@ dist-ssr
 # Sample plans for manual testing (never commit client drawings)
 test-plans/
 
-# pdf.js support files, copied from node_modules by scripts/copy-pdfjs-assets.mjs
+# pdf.js support files, copied from node_modules by scripts/copy-assets.mjs
 public/pdfjs/
+public/tesseract/
