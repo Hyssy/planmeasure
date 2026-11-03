@@ -7,6 +7,10 @@ See `CLAUDE.md` for the full project brief and build plan.
 
 ## Run it locally
 
+**Windows, the easy way:** double-click `start-cyclomeasure.bat` in this folder. It updates to the latest version from GitHub, installs anything new, and opens the app in your browser.
+
+Or by hand:
+
 You need [Node.js](https://nodejs.org) 20 or newer.
 
 ```bash
