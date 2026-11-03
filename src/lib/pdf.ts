@@ -23,22 +23,33 @@ export interface SheetMeta {
 
 // PDF objects can't live in React/Zustand state, so they're kept here by id.
 const documents = new Map<string, PDFDocumentProxy>()
+// Their loading tasks, which are what pdf.js closes.
+const loadingTasks = new Map<string, { destroy: () => Promise<void> }>()
 
-let nextFileId = 1
+/** A new, unique id for a PDF file (stable once saved in a project). */
+export function newFileId(): string {
+  return `f${Date.now().toString(36)}${Math.random().toString(36).slice(2, 8)}`
+}
 
-export async function loadPdfFile(file: File): Promise<SheetMeta[]> {
-  const data = new Uint8Array(await file.arrayBuffer())
-  const doc = await pdfjs.getDocument({
+/**
+ * Open a PDF from its bytes and list its pages. `fileId` keeps sheet ids stable
+ * (`<fileId>-p<n>`) so a saved project's takeoffs match up when it's reopened.
+ */
+export async function loadPdfBytes(bytes: Uint8Array, fileName: string, fileId: string): Promise<SheetMeta[]> {
+  // pdf.js takes ownership of the buffer it's given, so hand it a copy.
+  const data = bytes.slice()
+  const task = pdfjs.getDocument({
     data,
     cMapUrl: `${ASSET_BASE}cmaps/`,
     cMapPacked: true,
     standardFontDataUrl: `${ASSET_BASE}standard_fonts/`,
     wasmUrl: `${ASSET_BASE}wasm/`,
     iccUrl: `${ASSET_BASE}iccs/`,
-  }).promise
-
-  const fileId = `f${nextFileId++}`
+  })
+  const doc = await task.promise
+  void loadingTasks.get(fileId)?.destroy()
   documents.set(fileId, doc)
+  loadingTasks.set(fileId, task)
 
   const sheets: SheetMeta[] = []
   for (let n = 1; n <= doc.numPages; n++) {
@@ -47,13 +58,20 @@ export async function loadPdfFile(file: File): Promise<SheetMeta[]> {
     sheets.push({
       id: `${fileId}-p${n}`,
       fileId,
-      fileName: file.name,
+      fileName,
       pageNumber: n,
       widthPt: vp.width,
       heightPt: vp.height,
     })
   }
   return sheets
+}
+
+/** Close every open PDF (when switching projects) to free memory. */
+export function closeAllDocuments(): void {
+  for (const task of loadingTasks.values()) void task.destroy()
+  loadingTasks.clear()
+  documents.clear()
 }
 
 export function getPage(sheet: SheetMeta): Promise<PDFPageProxy> {

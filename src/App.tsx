@@ -15,6 +15,7 @@ export default function App() {
   const selectedId = useApp((s) => s.selectedSheetId)
   const openFiles = useApp((s) => s.openFiles)
   const loading = useApp((s) => s.loading)
+  const loadingMessage = useApp((s) => s.loadingMessage)
   const errors = useApp((s) => s.errors)
   const dismissErrors = useApp((s) => s.dismissErrors)
   const selected = sheets.find((s) => s.id === selectedId) ?? null
@@ -87,7 +88,7 @@ export default function App() {
             <div className="flex h-full items-center justify-center bg-neutral-200">
               <div className="rounded-xl border-2 border-dashed border-neutral-400 px-10 py-12 text-center text-neutral-600">
                 <p className="text-lg font-medium">
-                  {loading ? 'Opening PDFs…' : 'Drop plan PDFs here'}
+                  {loading ? loadingMessage || 'Opening…' : 'Drop plan PDFs here'}
                 </p>
                 <p className="mt-1 text-sm">or use “Open PDFs” above. Nothing is uploaded.</p>
               </div>

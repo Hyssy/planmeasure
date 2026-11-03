@@ -1,5 +1,6 @@
 import { useRef } from 'react'
 import { useApp, type Tool } from '../store'
+import ProjectMenu from './ProjectMenu'
 
 const TOOL_GROUPS: { id: Tool; label: string; key: string; hint: string }[][] = [
   [
@@ -28,10 +29,11 @@ export default function Toolbar() {
 
   return (
     <header className="flex h-12 shrink-0 items-center gap-3 border-b border-neutral-300 bg-white px-3">
-      <span className="font-semibold tracking-tight">PlanMeasure</span>
+      <span className="font-semibold tracking-tight whitespace-nowrap">PlanMeasure</span>
+      <ProjectMenu />
       <div className="h-6 w-px bg-neutral-200" />
       <button
-        className="rounded-md bg-blue-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-blue-700 disabled:opacity-60"
+        className="rounded-md bg-blue-600 px-3 py-1.5 text-sm font-medium whitespace-nowrap text-white hover:bg-blue-700 disabled:opacity-60"
         onClick={() => inputRef.current?.click()}
         disabled={loading}
       >
@@ -61,7 +63,7 @@ export default function Toolbar() {
                 onClick={() => setTool(t.id)}
                 title={`${t.hint} (${t.key})`}
                 aria-pressed={tool === t.id}
-                className={`rounded-md px-2.5 py-1.5 text-sm font-medium disabled:opacity-40 ${
+                className={`rounded-md px-2.5 py-1.5 text-sm font-medium whitespace-nowrap disabled:opacity-40 ${
                   tool === t.id ? 'bg-neutral-800 text-white' : 'hover:bg-neutral-100'
                 }`}
               >
@@ -73,7 +75,7 @@ export default function Toolbar() {
         <div className="mx-1 h-6 w-px bg-neutral-200" />
         <UndoRedo />
       </div>
-      <span className="ml-auto hidden text-xs text-neutral-500 xl:inline">
+      <span className="ml-auto hidden text-xs whitespace-nowrap text-neutral-500 2xl:inline">
         Scroll to zoom · Space+drag to pan · files stay on your computer
       </span>
     </header>

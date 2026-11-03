@@ -1,6 +1,17 @@
 import { create } from 'zustand'
 import { needsOcr, ocrSheetText } from './lib/ocr'
-import { getPageText, loadPdfFile, renderThumbnail, type PageText, type SheetMeta } from './lib/pdf'
+import * as db from './lib/db'
+import { closeAllDocuments, getPageText, loadPdfBytes, newFileId, renderThumbnail, type PageText, type SheetMeta } from './lib/pdf'
+import {
+  buildExport,
+  exportFileName,
+  parseExport,
+  PROJECT_FORMAT,
+  PROJECT_VERSION,
+  sha256Hex,
+  type ProjectData,
+  type ProjectFileMeta,
+} from './lib/projectFile'
 import {
   describeCandidate,
   distinctScales,
@@ -82,6 +93,22 @@ interface AppState {
   detections: Record<string, ScaleDetection | undefined>
   labels: Record<string, SheetLabel | undefined>
   loading: boolean
+  /** 'Opening…' message while a project or PDFs load */
+  loadingMessage: string
+
+  // ---- Project ----
+  projectId: string | null
+  projectName: string
+  files: ProjectFileMeta[]
+  saveStatus: 'idle' | 'saving' | 'saved' | 'error'
+  /** true while a project is being restored (autosave waits) */
+  restoring: boolean
+  newProject: () => void
+  openProject: (id: string) => Promise<void>
+  renameProject: (name: string) => void
+  deleteProject: (id: string) => Promise<void>
+  exportProject: () => Promise<void>
+  importProject: (file: File) => Promise<void>
   errors: string[]
   tool: Tool
 
@@ -167,6 +194,47 @@ function applyTextResults(
   return { detections, labels }
 }
 
+/** Bumped when the open project changes, so background work for the old one stops. */
+let generation = 0
+
+/** State for an empty project (keeps tool and UI preferences). */
+function emptyProject(): Partial<AppState> {
+  return {
+    sheets: [],
+    selectedSheetId: null,
+    thumbnails: {},
+    scales: {},
+    detections: {},
+    labels: {},
+    files: [],
+    items: [],
+    takeoffs: [],
+    activeItemId: null,
+    selectedTakeoffId: null,
+    cutoutFor: null,
+    past: [],
+    future: [],
+  }
+}
+
+/** The saved form of the open project. */
+export function toProjectData(s: AppState): ProjectData {
+  return {
+    format: PROJECT_FORMAT,
+    version: PROJECT_VERSION,
+    name: s.projectName,
+    savedAt: new Date().toISOString(),
+    files: s.files,
+    sheets: s.sheets,
+    labels: s.labels,
+    scales: s.scales,
+    detections: s.detections,
+    items: s.items,
+    takeoffs: s.takeoffs,
+    selectedSheetId: s.selectedSheetId,
+  }
+}
+
 function snap(s: AppState): Snapshot {
   return { items: s.items, takeoffs: s.takeoffs }
 }
@@ -190,7 +258,7 @@ function withOcrStatus(s: AppState, sheetId: string, ocr: ScaleDetection['ocr'])
   return d ? { detections: { ...s.detections, [sheetId]: { ...d, ocr } } } : {}
 }
 
-export const useApp = create<AppState>((set) => ({
+export const useApp = create<AppState>((set, get) => ({
   sheets: [],
   selectedSheetId: null,
   thumbnails: {},
@@ -205,7 +273,13 @@ export const useApp = create<AppState>((set) => ({
   past: [],
   future: [],
   loading: false,
+  loadingMessage: '',
   errors: [],
+  projectId: null,
+  projectName: '',
+  files: [],
+  saveStatus: 'idle',
+  restoring: false,
   tool: 'pan',
 
   openFiles: async (files) => {
@@ -214,14 +288,38 @@ export const useApp = create<AppState>((set) => ({
     )
     const skipped = files.filter((f) => !pdfs.includes(f))
     const errors = skipped.map((f) => `${f.name} is not a PDF, so it was skipped.`)
-    set({ loading: true, errors })
+    if (!pdfs.length) {
+      set({ errors })
+      return
+    }
+    set({ loading: true, loadingMessage: 'Opening PDFs…', errors })
+    const gen = generation
+
+    // Opening PDFs with no project open starts one, named after the first file.
+    let projectId = get().projectId
+    if (!projectId) {
+      projectId = db.newProjectId()
+      const name = pdfs[0].name.replace(/\.pdf$/i, '')
+      await db.createProject(projectId, name)
+      set({ projectId, projectName: name })
+    }
 
     const added: SheetMeta[] = []
     for (const file of pdfs) {
       try {
-        const sheets = await loadPdfFile(file)
+        const bytes = new Uint8Array(await file.arrayBuffer())
+        const sha256 = await sha256Hex(bytes)
+        if (get().files.some((f) => f.sha256 === sha256)) {
+          set((s) => ({ errors: [...s.errors, `${file.name} is already open in this project.`] }))
+          continue
+        }
+        const fileId = newFileId()
+        const sheets = await loadPdfBytes(bytes, file.name, fileId)
+        await db.savePdf(projectId, fileId, file)
+        if (gen !== generation) return
         added.push(...sheets)
         set((s) => ({
+          files: [...s.files, { fileId, name: file.name, size: bytes.length, sha256 }],
           sheets: [...s.sheets, ...sheets],
           selectedSheetId: s.selectedSheetId ?? sheets[0]?.id ?? null,
         }))
@@ -231,43 +329,106 @@ export const useApp = create<AppState>((set) => ({
       }
     }
     set({ loading: false })
+    await processSheets(added, added)
+  },
 
-    // 1. Read each sheet's text layer (fast): scale and sheet label.
-    const forOcr: SheetMeta[] = []
-    for (const sheet of added) {
-      let text: PageText = { text: '', items: [] }
-      try {
-        text = await getPageText(sheet)
-      } catch (err) {
-        console.error('Text extraction failed', sheet.id, err)
+  newProject: () => {
+    generation++
+    closeAllDocuments()
+    set({ ...emptyProject(), projectId: null, projectName: '', saveStatus: 'idle' })
+  },
+
+  openProject: async (id) => {
+    const gen = ++generation
+    closeAllDocuments()
+    set({ ...emptyProject(), projectId: null, restoring: true, loading: true, loadingMessage: 'Opening project…', errors: [] })
+    try {
+      const [records, data, pdfs] = await Promise.all([db.listProjects(), db.loadProjectData(id), db.loadPdfs(id)])
+      const record = records.find((r) => r.id === id)
+      if (!record) throw new Error('That project no longer exists.')
+      if (!data) {
+        // Created but nothing saved yet (e.g. the PDF failed to open).
+        set({ projectId: id, projectName: record.name, restoring: false, loading: false })
+        return
       }
-      const pagesInFile = added.filter((a) => a.fileId === sheet.fileId).length
-      const ocr = needsOcr(text) ? 'pending' : 'none'
-      if (ocr === 'pending') forOcr.push(sheet)
-      set((s) => applyTextResults(s, sheet, text, pagesInFile, ocr))
+      const missing: string[] = []
+      for (const f of data.files) {
+        const bytes = pdfs.get(f.fileId)
+        if (!bytes) {
+          missing.push(f.name)
+          continue
+        }
+        await loadPdfBytes(bytes, f.name, f.fileId)
+        if (gen !== generation) return
+      }
+      const loadedFiles = new Set(data.files.filter((f) => !missing.includes(f.name)).map((f) => f.fileId))
+      const sheets = data.sheets.filter((sh) => loadedFiles.has(sh.fileId))
+      set({
+        projectId: id,
+        projectName: record.name,
+        files: data.files.filter((f) => loadedFiles.has(f.fileId)),
+        sheets,
+        labels: data.labels as AppState['labels'],
+        scales: data.scales as AppState['scales'],
+        detections: data.detections as AppState['detections'],
+        items: data.items,
+        takeoffs: data.takeoffs,
+        selectedSheetId: sheets.some((sh) => sh.id === data.selectedSheetId) ? data.selectedSheetId : (sheets[0]?.id ?? null),
+        restoring: false,
+        loading: false,
+        saveStatus: 'saved',
+        errors: missing.map((n) => `The PDF “${n}” couldn’t be found in browser storage.`),
+      })
+      // Sheets whose text wasn't finished reading (e.g. OCR still running when the app closed) are read again.
+      const unfinished = sheets.filter((sh) => {
+        const d = get().detections[sh.id]
+        return !d?.done || d.ocr === 'pending' || d.ocr === 'running'
+      })
+      await processSheets(sheets, unfinished)
+    } catch (err) {
+      console.error('Open project failed', err)
+      if (gen === generation) {
+        set({ restoring: false, loading: false, errors: [`Couldn’t open the project: ${(err as Error).message}`] })
+      }
     }
+  },
 
-    // 2. Thumbnails.
-    for (const sheet of added) {
-      try {
-        const url = await renderThumbnail(sheet)
-        set((s) => ({ thumbnails: { ...s.thumbnails, [sheet.id]: url } }))
-      } catch (err) {
-        console.error('Thumbnail failed', sheet.id, err)
-      }
-    }
+  renameProject: (name) => set({ projectName: name.trim() || get().projectName }),
 
-    // 3. OCR the title blocks of sheets with no text layer (slow — a few seconds each).
-    for (const sheet of forOcr) {
-      set((s) => withOcrStatus(s, sheet.id, 'running'))
-      try {
-        const text = await ocrSheetText(sheet)
-        const pagesInFile = added.filter((a) => a.fileId === sheet.fileId).length
-        set((s) => applyTextResults(s, sheet, text, pagesInFile, 'done'))
-      } catch (err) {
-        console.error('OCR failed', sheet.id, err)
-        set((s) => withOcrStatus(s, sheet.id, 'failed'))
+  deleteProject: async (id) => {
+    await db.deleteProject(id)
+    if (get().projectId === id) get().newProject()
+  },
+
+  exportProject: async () => {
+    const s = get()
+    if (!s.projectId) return
+    const pdfs = await db.loadPdfs(s.projectId)
+    const text = buildExport(toProjectData(s), pdfs)
+    const url = URL.createObjectURL(new Blob([text], { type: 'application/json' }))
+    const a = document.createElement('a')
+    a.href = url
+    a.download = exportFileName(s.projectName)
+    document.body.appendChild(a)
+    a.click()
+    a.remove()
+    setTimeout(() => URL.revokeObjectURL(url), 10_000)
+  },
+
+  importProject: async (file) => {
+    set({ loading: true, loadingMessage: 'Importing project…', errors: [] })
+    try {
+      const { data, pdfs } = await parseExport(await file.text())
+      const id = db.newProjectId()
+      await db.createProject(id, data.name)
+      for (const f of data.files) {
+        await db.savePdf(id, f.fileId, new Blob([pdfs.get(f.fileId)! as Uint8Array<ArrayBuffer>], { type: 'application/pdf' }))
       }
+      await db.saveProjectData(id, { ...data, savedAt: new Date().toISOString() })
+      await get().openProject(id)
+    } catch (err) {
+      console.error('Import failed', err)
+      set({ loading: false, errors: [(err as Error).message || 'Couldn’t import that file.'] })
     }
   },
 
@@ -408,3 +569,54 @@ export const useApp = create<AppState>((set) => ({
       labels: { ...s.labels, [sheetId]: { number: number.trim(), title: title.trim(), edited: true } },
     })),
 }))
+
+/**
+ * Background work for newly opened sheets: read text (scale and label) for
+ * `needText`, make thumbnails for all of `sheets`, then OCR sheets with no text.
+ * Stops if another project is opened meanwhile.
+ */
+async function processSheets(sheets: SheetMeta[], needText: SheetMeta[]): Promise<void> {
+  const gen = generation
+  const set = useApp.setState
+  const pagesInFile = (sheet: SheetMeta) => useApp.getState().sheets.filter((a) => a.fileId === sheet.fileId).length
+
+  // 1. Read each sheet's text layer (fast): scale and sheet label.
+  const forOcr: SheetMeta[] = []
+  for (const sheet of needText) {
+    let text: PageText = { text: '', items: [] }
+    try {
+      text = await getPageText(sheet)
+    } catch (err) {
+      console.error('Text extraction failed', sheet.id, err)
+    }
+    if (gen !== generation) return
+    const ocr = needsOcr(text) ? 'pending' : 'none'
+    if (ocr === 'pending') forOcr.push(sheet)
+    set((s) => applyTextResults(s, sheet, text, pagesInFile(sheet), ocr))
+  }
+
+  // 2. Thumbnails.
+  for (const sheet of sheets) {
+    try {
+      const url = await renderThumbnail(sheet)
+      if (gen !== generation) return
+      set((s) => ({ thumbnails: { ...s.thumbnails, [sheet.id]: url } }))
+    } catch (err) {
+      console.error('Thumbnail failed', sheet.id, err)
+    }
+  }
+
+  // 3. OCR the title blocks of sheets with no text layer (slow — a few seconds each).
+  for (const sheet of forOcr) {
+    if (gen !== generation) return
+    set((s) => withOcrStatus(s, sheet.id, 'running'))
+    try {
+      const text = await ocrSheetText(sheet)
+      if (gen !== generation) return
+      set((s) => applyTextResults(s, sheet, text, pagesInFile(sheet), 'done'))
+    } catch (err) {
+      console.error('OCR failed', sheet.id, err)
+      if (gen === generation) set((s) => withOcrStatus(s, sheet.id, 'failed'))
+    }
+  }
+}

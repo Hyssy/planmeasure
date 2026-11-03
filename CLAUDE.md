@@ -18,7 +18,7 @@ A browser-based PDF takeoff and markup tool for construction plans (architectura
 
 ## Core principle: everything runs in the browser
 - PDFs are **never uploaded to a server**. They're processed locally with pdf.js.
-- Projects are saved in the browser (IndexedDB), with export/import as a `.json` project file so work can be shared or backed up.
+- Projects are saved in the browser (IndexedDB), with export/import as a `.json` project file so work can be shared or backed up. **Exported project files always include the PDFs** (decided by Jordan), base64-encoded and checked with SHA-256 on import, so one file holds everything.
 - No backend, no database, no accounts. The site is static files.
 
 ## Tech stack (keep it to this unless we agree to change)
