@@ -189,6 +189,7 @@ export default function PlanViewer({ sheet }: Props) {
   const tool = useApp((s) => s.tool)
   const setTool = useApp((s) => s.setTool)
   const scale = useApp((s) => s.scales[sheet.id])
+  const label = useApp((s) => s.labels[sheet.id])
   const setCalibratedScale = useApp((s) => s.setCalibratedScale)
 
   /** Points placed so far for the line being drawn (calibrate or measure). */
@@ -417,7 +418,10 @@ export default function PlanViewer({ sheet }: Props) {
       </div>
 
       <div className="pointer-events-none absolute bottom-3 left-3 rounded bg-black/60 px-2 py-1 text-xs text-white">
-        {sheet.fileName} · page {sheet.pageNumber} · {describePaperSize(sheet.widthPt, sheet.heightPt)}
+        {label?.number && <strong className="font-semibold">{label.number}</strong>}
+        {label?.title && <> {label.title}</>}
+        {(label?.number || label?.title) && ' · '}
+        {sheet.fileName} p{sheet.pageNumber} · {describePaperSize(sheet.widthPt, sheet.heightPt)}
       </div>
 
       {measured && (

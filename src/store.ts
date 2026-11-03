@@ -10,6 +10,7 @@ import {
   scaleSuitsPage,
   type ScaleCandidate,
 } from './lib/scale'
+import { detectSheetLabel } from './lib/sheetLabel'
 
 export type Tool = 'pan' | 'calibrate' | 'measure'
 
@@ -34,12 +35,26 @@ export interface ScaleDetection {
   mismatched: ScaleCandidate[]
 }
 
+/** A sheet's number and title — detected, then editable. Empty string = unknown. */
+export interface SheetLabel {
+  number: string
+  title: string
+  /** true once the user has edited it */
+  edited: boolean
+}
+
+/** "A-101", or "Sheet 3" when no number is known. */
+export function sheetName(label: SheetLabel | undefined, index: number): string {
+  return label?.number || `Sheet ${index + 1}`
+}
+
 interface AppState {
   sheets: SheetMeta[]
   selectedSheetId: string | null
   thumbnails: Record<string, string>
   scales: Record<string, SheetScale | undefined>
   detections: Record<string, ScaleDetection | undefined>
+  labels: Record<string, SheetLabel | undefined>
   loading: boolean
   errors: string[]
   tool: Tool
@@ -53,6 +68,7 @@ interface AppState {
   setCalibratedScale: (sheetId: string, realMmPerPt: number) => void
   confirmScale: (sheetId: string) => void
   clearScale: (sheetId: string) => void
+  setLabel: (sheetId: string, number: string, title: string) => void
 }
 
 /** Scale for a 1:ratio drawing printed at its intended size on this page. */
@@ -66,6 +82,7 @@ export const useApp = create<AppState>((set) => ({
   thumbnails: {},
   scales: {},
   detections: {},
+  labels: {},
   loading: false,
   errors: [],
   tool: 'pan',
@@ -97,8 +114,13 @@ export const useApp = create<AppState>((set) => ({
     // Scale detection: read each sheet's text (fast), then make thumbnails (slower).
     for (const sheet of added) {
       let found: ScaleCandidate[] = []
+      let label: SheetLabel = { number: '', title: '', edited: false }
       try {
-        found = distinctScales(findScaleCandidates(await getPageText(sheet)))
+        const { text, items } = await getPageText(sheet)
+        found = distinctScales(findScaleCandidates(text))
+        const pagesInFile = added.filter((a) => a.fileId === sheet.fileId).length
+        const guess = detectSheetLabel(items, sheet.widthPt, sheet.heightPt, sheet.fileName, pagesInFile)
+        label = { number: guess.number ?? '', title: guess.title ?? '', edited: false }
       } catch (err) {
         console.error('Text extraction failed', sheet.id, err)
       }
@@ -107,12 +129,13 @@ export const useApp = create<AppState>((set) => ({
       const mismatched = found.filter((c) => !fits(c))
       set((s) => {
         const detections = { ...s.detections, [sheet.id]: { done: true, candidates, mismatched } }
+        const labels = s.labels[sheet.id]?.edited ? s.labels : { ...s.labels, [sheet.id]: label }
         // Exactly one scale found, and it suits this page size → suggest it (still needs verifying).
         if (candidates.length === 1 && mismatched.length === 0 && !s.scales[sheet.id]) {
           const scale: SheetScale = { ...ratioScale(candidates[0]), status: 'detected', source: 'detected' }
-          return { detections, scales: { ...s.scales, [sheet.id]: scale } }
+          return { detections, labels, scales: { ...s.scales, [sheet.id]: scale } }
         }
-        return { detections }
+        return { detections, labels }
       })
     }
 
@@ -153,4 +176,9 @@ export const useApp = create<AppState>((set) => ({
     }),
 
   clearScale: (sheetId) => set((s) => ({ scales: { ...s.scales, [sheetId]: undefined } })),
+
+  setLabel: (sheetId, number, title) =>
+    set((s) => ({
+      labels: { ...s.labels, [sheetId]: { number: number.trim(), title: title.trim(), edited: true } },
+    })),
 }))
