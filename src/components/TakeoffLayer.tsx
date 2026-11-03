@@ -9,6 +9,8 @@ export interface TakeoffDraft {
   points: Point[]
   cursor: Point | null
   label?: string
+  /** show a dot at each clicked point (off for rectangles and freehand) */
+  handles?: boolean
 }
 
 interface Props {
@@ -147,7 +149,7 @@ function DraftShape({ draft, s }: { draft: TakeoffDraft; s: number }) {
           lineJoin="round"
         />
       )}
-      {draft.points.map((p, i) => (
+      {draft.handles !== false && draft.points.map((p, i) => (
         <Circle key={i} x={p.x} y={p.y} radius={(i === 0 && closed ? 6 : 4) / s} fill="white" stroke={colour} strokeWidth={2} strokeScaleEnabled={false} />
       ))}
       {draft.label && pts.length >= 2 && <QuantityLabel at={pts[pts.length - 1]} text={draft.label} s={s} offset />}

@@ -98,3 +98,38 @@ describe('item totals and scale states', () => {
     expect(formatQuantity(17, 'count')).toBe('17')
   })
 })
+
+describe('drawing styles', () => {
+  it('a rectangle from two corners has the right area, however it was dragged', async () => {
+    const { rectCorners } = await import('./geometry')
+    for (const [a, b] of [[m(0, 0), m(6, 4)], [m(6, 4), m(0, 0)], [m(6, 0), m(0, 4)]]) {
+      const r = rectCorners(a, b)
+      expect(r).toHaveLength(4)
+      expect(netAreaM2(r, [], k100)).toBeCloseTo(24, 9)
+      expect(perimeterM(r, k100)).toBeCloseTo(20, 9)
+    }
+  })
+
+  it('simplifying a freehand stroke keeps its length and area to well under 0.5%', async () => {
+    const { simplifyPath } = await import('./geometry')
+    // a wobbly circle of radius 5 m, sampled every degree with ±0.2 mm paper jitter
+    const r = mmToPt(50)
+    const raw = Array.from({ length: 360 }, (_, i) => {
+      const t = (i / 360) * 2 * Math.PI
+      const jitter = mmToPt(0.2) * Math.sin(i * 7.3)
+      return { x: (r + jitter) * Math.cos(t), y: (r + jitter) * Math.sin(t) }
+    })
+    const simple = simplifyPath(raw, mmToPt(0.1))
+    expect(simple.length).toBeLessThan(raw.length)
+    const before = netAreaM2(raw, [], k100)
+    const after = netAreaM2(simple, [], k100)
+    expect(Math.abs(after - before) / before).toBeLessThan(0.005)
+    expect(Math.abs(before - Math.PI * 25) / (Math.PI * 25)).toBeLessThan(0.01)
+  })
+
+  it('a straight freehand line simplifies to its two ends', async () => {
+    const { simplifyPath } = await import('./geometry')
+    const line = Array.from({ length: 50 }, (_, i) => ({ x: i, y: 0.01 * Math.sin(i) }))
+    expect(simplifyPath(line, 0.1)).toEqual([line[0], line[49]])
+  })
+})

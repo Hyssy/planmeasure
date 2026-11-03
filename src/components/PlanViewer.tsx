@@ -3,9 +3,9 @@ import { renderPage, type RenderHandle, type SheetMeta } from '../lib/pdf'
 import { distancePt, formatLength, realMm, type Point } from '../lib/scale'
 import { describePaperSize } from '../lib/units'
 import { ACTUAL_SIZE_SCALE, fitView, screenToPage, zoomAt, type View } from '../lib/view'
-import { distanceToPolyline, pointInPolygon } from '../lib/geometry'
+import { distanceToPolyline, pointInPolygon, polygonAreaPt2, rectCorners, simplifyPath } from '../lib/geometry'
 import { formatQuantity, ITEM_COLOURS, KIND_LABEL, takeoffQuantity, type Takeoff, type TakeoffKind } from '../lib/takeoff'
-import { isTakeoffTool, scaleInfo, useApp } from '../store'
+import { isTakeoffTool, scaleInfo, useApp, type DrawStyle } from '../store'
 import TakeoffLayer, { type TakeoffDraft } from './TakeoffLayer'
 import CalibrateDialog from './CalibrateDialog'
 import MeasureOverlay, { type OverlayLine } from './MeasureOverlay'
@@ -204,6 +204,7 @@ export default function PlanViewer({ sheet }: Props) {
   const updateTakeoff = useApp((s) => s.updateTakeoff)
   const checkpoint = useApp((s) => s.checkpoint)
   const cutoutFor = useApp((s) => s.cutoutFor)
+  const drawStyles = useApp((s) => s.drawStyles)
   const addCutout = useApp((s) => s.addCutout)
   const cancelCutout = useApp((s) => s.cancelCutout)
   const [notice, setNotice] = useState<string | null>(null)
@@ -239,6 +240,12 @@ export default function PlanViewer({ sheet }: Props) {
   }
 
   const cutoutTarget = cutoutFor ? takeoffs.find((t) => t.id === cutoutFor) : undefined
+  const drawStyle: DrawStyle =
+    tool === 'linear' || tool === 'area' || tool === 'perimeter' ? drawStyles[tool] : 'polygon'
+  /** Freehand stroke in progress (button held down). */
+  const freehand = useRef<{ pointerId: number } | null>(null)
+  /** Rectangle being dragged (button held down from its first corner). */
+  const rectDrag = useRef<{ pointerId: number; sx: number; sy: number } | null>(null)
   const isClosedTool = tool === 'area' || tool === 'perimeter' || !!cutoutTarget
   const minPoints = isClosedTool ? 3 : 2
 
@@ -257,7 +264,8 @@ export default function PlanViewer({ sheet }: Props) {
       return
     }
     if (!isTakeoffTool(tool) || tool === 'count') return
-    if (pts.length >= minPoints) addTakeoff(sheet.id, tool, pts)
+    const degenerate = isClosedTool && polygonAreaPt2(pts) < 0.01 // e.g. a double-click on one spot
+    if (pts.length >= minPoints && !degenerate) addTakeoff(sheet.id, tool, pts)
     setDraft([])
     setCursor(null)
   }
@@ -439,6 +447,28 @@ export default function PlanViewer({ sheet }: Props) {
       return
     }
 
+    if ((tool === 'linear' || tool === 'area' || tool === 'perimeter') && drawStyle === 'freehand') {
+      // Freehand: hold the button down and trace; lifting it finishes.
+      ;(e.currentTarget as HTMLElement).setPointerCapture(e.pointerId)
+      freehand.current = { pointerId: e.pointerId }
+      setDraft([p])
+      setCursor(null)
+      return
+    }
+
+    if ((tool === 'area' || tool === 'perimeter') && drawStyle === 'rectangle') {
+      if (draft.length === 1) {
+        // Second click of a click-click rectangle.
+        finishShape(rectCorners(draft[0], p))
+        return
+      }
+      ;(e.currentTarget as HTMLElement).setPointerCapture(e.pointerId)
+      rectDrag.current = { pointerId: e.pointerId, sx: e.clientX, sy: e.clientY }
+      setDraft([p])
+      setCursor(p)
+      return
+    }
+
     if (tool === 'linear' || tool === 'area' || tool === 'perimeter') {
       // Clicking the first point closes an area or perimeter.
       if (isClosedTool && draft.length >= 3 && distancePt(p, draft[0]) * view.scale < 10) {
@@ -477,11 +507,43 @@ export default function PlanViewer({ sheet }: Props) {
       setView({ ...d.view, x: d.view.x + e.clientX - d.sx, y: d.view.y + e.clientY - d.sy })
       return
     }
+    if (freehand.current?.pointerId === e.pointerId && viewRef.current) {
+      // Add a point for every pixel or so of movement.
+      const p = pagePointFromEvent(e)
+      const last = draft[draft.length - 1]
+      if (!last || distancePt(p, last) * viewRef.current.scale >= 1) setDraft((d) => [...d, p])
+      return
+    }
+    if (rectDrag.current && viewRef.current) {
+      setCursor(pagePointFromEvent(e))
+      return
+    }
     if (tool !== 'pan' && (tool !== 'select' || cutoutTarget) && draft.length > 0 && viewRef.current) {
       setCursor(pagePointFromEvent(e, draft[draft.length - 1]))
     }
   }
   const endDrag = (e: React.PointerEvent) => {
+    if (freehand.current?.pointerId === e.pointerId) {
+      freehand.current = null
+      const v = viewRef.current
+      // Drop points that add nothing (within ~¼ pixel of a straight line), then finish.
+      // Simplifying always trims slightly inside curves, so keep the tolerance tight.
+      const pts = v ? simplifyPath(draft, 0.25 / v.scale) : draft
+      const big = v && pts.length >= minPoints && pts.some((q) => distancePt(q, pts[0]) * v.scale > 4)
+      if (big) finishShape(pts)
+      else {
+        setDraft([])
+        setCursor(null)
+      }
+      return
+    }
+    if (rectDrag.current?.pointerId === e.pointerId) {
+      const d = rectDrag.current
+      rectDrag.current = null
+      // Dragged: finish on release. Just clicked: wait for the opposite corner.
+      if (Math.hypot(e.clientX - d.sx, e.clientY - d.sy) > 4 && draft[0]) finishShape(rectCorners(draft[0], pagePointFromEvent(e)))
+      return
+    }
     if (edit.current?.pointerId === e.pointerId) edit.current = null
     if (drag.current?.id === e.pointerId) {
       drag.current = null
@@ -528,13 +590,17 @@ export default function PlanViewer({ sheet }: Props) {
         label: `− ${qtyText({ points: cursor ? [...draft, cursor] : draft, holes: [] }, 'area')}`,
       }
     : isTakeoffTool(tool) && tool !== 'count' && draft.length > 0
-      ? {
-          kind: tool,
-          colour: drawItem?.colour ?? ITEM_COLOURS[items.length % ITEM_COLOURS.length],
-          points: draft,
-          cursor,
-          label: qtyText({ points: cursor ? [...draft, cursor] : draft, holes: [] }, tool),
-        }
+      ? (() => {
+          const colour = drawItem?.colour ?? ITEM_COLOURS[items.length % ITEM_COLOURS.length]
+          if (drawStyle === 'rectangle') {
+            const corners = cursor ? rectCorners(draft[0], cursor) : draft
+            return { kind: tool, colour, points: corners, cursor: null, label: qtyText({ points: corners, holes: [] }, tool), handles: false }
+          }
+          if (drawStyle === 'freehand') {
+            return { kind: tool, colour, points: draft, cursor: null, label: qtyText({ points: draft, holes: [] }, tool), handles: false }
+          }
+          return { kind: tool, colour, points: draft, cursor, label: qtyText({ points: cursor ? [...draft, cursor] : draft, holes: [] }, tool) }
+        })()
       : null
   const selected = takeoffs.find((t) => t.id === selectedId)
   const selectedKind = selected ? itemsById.get(selected.itemId)?.kind : undefined
@@ -573,7 +639,13 @@ export default function PlanViewer({ sheet }: Props) {
               : 'Click the end point (hold Shift for straight)'
             : tool === 'count'
               ? `Count into ${itemName}: click each one`
-              : draft.length === 0
+              : drawStyle === 'freehand'
+                ? `${KIND_LABEL[tool]} into ${itemName}: hold the mouse button down and trace${isClosedTool ? ' round the shape (it closes itself)' : ''}`
+                : drawStyle === 'rectangle'
+                  ? draft.length === 0
+                    ? `${KIND_LABEL[tool]} into ${itemName}: drag from one corner to the opposite corner (or click both)`
+                    : 'Now click the opposite corner'
+                  : draft.length === 0
                 ? `${KIND_LABEL[tool]} into ${itemName}: click the first point`
                 : isClosedTool
                   ? 'Click to add corners · click the first point or press Enter to close · Backspace removes a point'

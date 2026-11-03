@@ -1,10 +1,11 @@
 import { useEffect, useState } from 'react'
 import ItemsPanel from './components/ItemsPanel'
+import OptionsBar from './components/OptionsBar'
 import PlanViewer from './components/PlanViewer'
 import ScaleBar from './components/ScaleBar'
 import SheetList from './components/SheetList'
 import Toolbar from './components/Toolbar'
-import { useApp, type Tool } from './store'
+import { DRAW_STYLES, useApp, type Tool } from './store'
 
 const TOOL_KEYS: Record<string, Tool> = {
   v: 'select', h: 'pan', c: 'calibrate', m: 'measure', l: 'linear', a: 'area', p: 'perimeter', n: 'count',
@@ -38,6 +39,12 @@ export default function App() {
         return
       }
       if (e.altKey || !useApp.getState().sheets.length) return
+      const st = useApp.getState()
+      if ((key === '1' || key === '2' || key === '3') && (st.tool === 'linear' || st.tool === 'area' || st.tool === 'perimeter')) {
+        const style = (['polygon', 'rectangle', 'freehand'] as const)[Number(key) - 1]
+        if (DRAW_STYLES[st.tool].includes(style)) st.setDrawStyle(st.tool, style)
+        return
+      }
       const tool = TOOL_KEYS[key]
       if (tool) setTool(tool)
     }
@@ -74,6 +81,7 @@ export default function App() {
   return (
     <div className="flex h-full flex-col">
       <Toolbar />
+      <OptionsBar />
       <div className="flex min-h-0 flex-1">
         <SheetList />
         <main className="relative min-w-0 flex-1">

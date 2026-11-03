@@ -78,3 +78,43 @@ export function polygonCentroid(poly: Point[]): Point {
   }
   return { x: cx / (6 * a), y: cy / (6 * a) }
 }
+
+/** The four corners of the rectangle with opposite corners a and b (clockwise on screen). */
+export function rectCorners(a: Point, b: Point): Point[] {
+  return [
+    { x: a.x, y: a.y },
+    { x: b.x, y: a.y },
+    { x: b.x, y: b.y },
+    { x: a.x, y: b.y },
+  ]
+}
+
+/**
+ * Simplify a freehand stroke (Ramer–Douglas–Peucker): drop points that are within
+ * `tolerance` of the line through their neighbours. Keeps the shape, loses the jitter
+ * and the thousands of points a mouse produces.
+ */
+export function simplifyPath(points: Point[], tolerance: number): Point[] {
+  if (points.length <= 2) return points.slice()
+  const keep = new Uint8Array(points.length)
+  keep[0] = 1
+  keep[points.length - 1] = 1
+  const stack: [number, number][] = [[0, points.length - 1]]
+  while (stack.length) {
+    const [first, last] = stack.pop()!
+    let maxDist = 0
+    let index = -1
+    for (let i = first + 1; i < last; i++) {
+      const d = distanceToSegment(points[i], points[first], points[last])
+      if (d > maxDist) {
+        maxDist = d
+        index = i
+      }
+    }
+    if (index !== -1 && maxDist > tolerance) {
+      keep[index] = 1
+      stack.push([first, index], [index, last])
+    }
+  }
+  return points.filter((_, i) => keep[i])
+}

@@ -30,6 +30,15 @@ export type Tool = 'select' | 'pan' | 'calibrate' | 'measure' | TakeoffKind
 
 export const TAKEOFF_TOOLS: TakeoffKind[] = ['linear', 'area', 'perimeter', 'count']
 
+/** How a takeoff shape is drawn: clicking corners, dragging a rectangle, or freehand. */
+export type DrawStyle = 'polygon' | 'rectangle' | 'freehand'
+export type StyledKind = 'linear' | 'area' | 'perimeter'
+export const DRAW_STYLES: Record<StyledKind, DrawStyle[]> = {
+  linear: ['polygon', 'freehand'],
+  area: ['polygon', 'rectangle', 'freehand'],
+  perimeter: ['polygon', 'rectangle', 'freehand'],
+}
+
 export function isTakeoffTool(tool: Tool): tool is TakeoffKind {
   return (TAKEOFF_TOOLS as Tool[]).includes(tool)
 }
@@ -124,6 +133,8 @@ interface AppState {
   setLabel: (sheetId: string, number: string, title: string) => void
 
   // ---- Takeoff ----
+  drawStyles: Record<StyledKind, DrawStyle>
+  setDrawStyle: (kind: StyledKind, style: DrawStyle) => void
   items: Item[]
   takeoffs: Takeoff[]
   /** the item new shapes are added to */
@@ -265,6 +276,8 @@ export const useApp = create<AppState>((set, get) => ({
   scales: {},
   detections: {},
   labels: {},
+  drawStyles: { linear: 'polygon', area: 'polygon', perimeter: 'polygon' },
+  setDrawStyle: (kind, style) => set((s) => ({ drawStyles: { ...s.drawStyles, [kind]: style } })),
   items: [],
   takeoffs: [],
   activeItemId: null,
