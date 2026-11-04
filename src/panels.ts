@@ -14,17 +14,17 @@ type PanelName = keyof PanelState
 const KEY = 'planmeasure.panels'
 const ALL_OPEN: PanelState = { sheets: true, items: true, scaleBar: true }
 
-function load(): { open: PanelState; beforeFocus: PanelState | null } {
+function load(): { open: PanelState; beforeFocus: PanelState | null; snap: boolean } {
   try {
     const raw = localStorage.getItem(KEY)
     if (raw) {
       const p = JSON.parse(raw)
-      return { open: { ...ALL_OPEN, ...p.open }, beforeFocus: p.beforeFocus ?? null }
+      return { open: { ...ALL_OPEN, ...p.open }, beforeFocus: p.beforeFocus ?? null, snap: p.snap ?? true }
     }
   } catch {
     // storage unavailable (private window etc.) — just use the defaults
   }
-  return { open: ALL_OPEN, beforeFocus: null }
+  return { open: ALL_OPEN, beforeFocus: null, snap: true }
 }
 
 interface Panels {
@@ -34,10 +34,14 @@ interface Panels {
   setPanel: (name: PanelName, open: boolean) => void
   /** Hide every panel so the plan fills the screen; again to bring them back. */
   toggleFocus: () => void
+  /** Snap to the drawing's linework while drawing (a personal preference). */
+  snap: boolean
+  setSnap: (on: boolean) => void
 }
 
 export const usePanels = create<Panels>((set, get) => ({
   ...load(),
+  setSnap: (on) => set({ snap: on }),
   setPanel: (name, open) => set((s) => ({ open: { ...s.open, [name]: open }, beforeFocus: null })),
   toggleFocus: () => {
     const { open, beforeFocus } = get()
@@ -49,7 +53,7 @@ export const usePanels = create<Panels>((set, get) => ({
 
 usePanels.subscribe((s) => {
   try {
-    localStorage.setItem(KEY, JSON.stringify({ open: s.open, beforeFocus: s.beforeFocus }))
+    localStorage.setItem(KEY, JSON.stringify({ open: s.open, beforeFocus: s.beforeFocus, snap: s.snap }))
   } catch {
     // ignore — it's only a convenience
   }

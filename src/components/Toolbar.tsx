@@ -90,6 +90,7 @@ export default function Toolbar() {
         <div className="mx-1 h-6 w-px bg-white/20" />
         <UndoRedo />
         <div className="mx-1 h-6 w-px bg-white/20" />
+        <SnapToggle />
         <Layers />
         <div className="mx-1 h-6 w-px bg-white/20" />
         <ExportPdfButton />
@@ -151,5 +152,21 @@ function ExportPdfButton() {
       </button>
       {open && <ExportPdfDialog onClose={() => setOpen(false)} />}
     </>
+  )
+}
+
+function SnapToggle() {
+  const snap = usePanels((s) => s.snap)
+  const setSnap = usePanels((s) => s.setSnap)
+  return (
+    <button
+      onClick={() => setSnap(!snap)}
+      aria-pressed={snap}
+      data-testid="snap-toggle"
+      title="Snap to the drawing's line ends, corners, midpoints and intersections while measuring (S). Hold Alt to draw freely."
+      className={`rounded-md px-2.5 py-1.5 text-sm font-medium whitespace-nowrap ${snap ? 'bg-white/15 text-chalk' : 'text-foundation-grey hover:bg-white/10'}`}
+    >
+      Snap {snap ? 'on' : 'off'}
+    </button>
   )
 }

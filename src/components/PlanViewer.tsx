@@ -6,6 +6,9 @@ import { ACTUAL_SIZE_SCALE, fitView, screenToPage, zoomAt, type View } from '../
 import { distanceToPolyline, pointInPolygon, polygonAreaPt2, rectCorners, simplifyPath } from '../lib/geometry'
 import { formatQuantity, ITEM_COLOURS, KIND_LABEL, takeoffQuantity, type Takeoff, type TakeoffKind } from '../lib/takeoff'
 import { isFocused, usePanels } from '../panels'
+import { findImageSnap, findSnap, SegmentIndex, SNAP_LABEL, type Segment, type Snap } from '../lib/snap'
+import { getSnapSource, imageTileAt, type SnapSource } from '../lib/snapSource'
+import SnapMarkerLayer from './SnapMarker'
 import { isTakeoffTool, scaleInfo, useApp, type DrawStyle } from '../store'
 import TakeoffLayer, { type TakeoffDraft } from './TakeoffLayer'
 import MarkupLayer from './MarkupLayer'
@@ -389,6 +392,69 @@ export default function PlanViewer({ sheet }: Props) {
   }, [])
 
   /** Page point under the mouse. Shift locks the line horizontal or vertical. */
+  // ---- Snapping ----
+  const snapOn = usePanels((s) => s.snap)
+  const snapApplies =
+    snapOn &&
+    !!view &&
+    (!!cutoutTarget ||
+      tool === 'calibrate' ||
+      tool === 'measure' ||
+      ((tool === 'linear' || tool === 'area' || tool === 'perimeter') && drawStyle !== 'freehand') ||
+      (tool === 'markup' && ['line', 'arrow', 'rectangle', 'ellipse', 'cloud', 'highlight'].includes(markupOptions.type)))
+  const [snapSource, setSnapSource] = useState<{ sheetId: string; source: SnapSource } | null>(null)
+  // Read the sheet's linework as soon as it's shown (if snapping is on), so it's ready by the first click.
+  useEffect(() => {
+    if (!snapOn) return
+    let live = true
+    void getSnapSource(sheet).then((source) => live && setSnapSource({ sheetId: sheet.id, source }))
+    return () => {
+      live = false
+    }
+  }, [snapOn, sheet])
+  /** Edges of the shapes already drawn on this sheet: snap to those too. */
+  const shapeIndex = useMemo(() => {
+    const segs: Segment[] = []
+    const add = (ring: Point[], closed: boolean) => {
+      for (let i = 0; i + 1 < ring.length; i++) segs.push([ring[i].x, ring[i].y, ring[i + 1].x, ring[i + 1].y])
+      if (closed && ring.length > 2) segs.push([ring[ring.length - 1].x, ring[ring.length - 1].y, ring[0].x, ring[0].y])
+    }
+    for (const t of takeoffs) {
+      const kind = itemsById.get(t.itemId)?.kind
+      if (kind && kind !== 'count') {
+        add(t.points, kind !== 'linear')
+        t.holes.forEach((h) => add(h, true))
+      }
+    }
+    for (const m of markups) if (m.type === 'line' || m.type === 'arrow') add(m.points, false)
+    return new SegmentIndex(segs)
+  }, [takeoffs, markups, itemsById])
+  const [, setTileTick] = useState(0)
+  const [snap, setSnap] = useState<Snap | null>(null)
+
+  /** The snap for a raw page point, or null (snapping off, Alt/Shift held, or nothing near). */
+  const snapAt = (p: Point, e: { altKey: boolean; shiftKey: boolean }): Snap | null => {
+    const v = viewRef.current
+    if (!snapApplies || !v || e.altKey || e.shiftKey) return null
+    const radius = 10 / v.scale
+    const found: Snap[] = []
+    const own = findSnap(shapeIndex, p, radius)
+    if (own) found.push(own)
+    const src = snapSource?.sheetId === sheet.id ? snapSource.source : null
+    if (src?.kind === 'vector') {
+      const s = findSnap(src.index, p, radius)
+      if (s) found.push(s)
+    } else if (src?.kind === 'image') {
+      const tile = imageTileAt(sheet, p, () => setTileTick((n) => n + 1))
+      const s = tile && findImageSnap(tile, p, Math.min(radius, 20))
+      if (s) found.push(s)
+    }
+    const rank: Record<Snap['kind'], number> = { end: 0, intersection: 0, 'corner-approx': 1, mid: 2, line: 3, 'line-approx': 4 }
+    found.sort((a, b) => rank[a.kind] - rank[b.kind] || distancePt(a.point, p) - distancePt(b.point, p))
+    return found[0] ?? null
+  }
+
+  /** Page point under the mouse: snapped to the drawing if snapping applies; Shift locks the line horizontal or vertical. */
   const pagePointFromEvent = (e: React.PointerEvent | React.MouseEvent, from?: Point): Point => {
     const rect = boxRef.current!.getBoundingClientRect()
     const p = screenToPage(viewRef.current!, e.clientX - rect.left, e.clientY - rect.top)
@@ -397,7 +463,7 @@ export default function PlanViewer({ sheet }: Props) {
         ? { x: p.x, y: from.y }
         : { x: from.x, y: p.y }
     }
-    return p
+    return snapAt(p, e)?.point ?? p
   }
 
   /** The topmost markup under a page point, if any. */
@@ -645,6 +711,13 @@ export default function PlanViewer({ sheet }: Props) {
   const [hoverHandle, setHoverHandle] = useState(false)
   const onPointerMove = (e: React.PointerEvent) => {
     if (editMove(e)) return
+    // Show where the next click will snap to.
+    if (snapApplies && !drag.current && !freehand.current && viewRef.current) {
+      const rect = boxRef.current!.getBoundingClientRect()
+      const raw = screenToPage(viewRef.current, e.clientX - rect.left, e.clientY - rect.top)
+      const next = snapAt(raw, e)
+      if (next?.kind !== snap?.kind || next?.point.x !== snap?.point.x || next?.point.y !== snap?.point.y) setSnap(next)
+    } else if (snap) setSnap(null)
     if (tool === 'select' && viewRef.current) {
       const q = pagePointFromEvent(e)
       const over = handleAt(q) !== null || markupHandleAt(q) !== null
@@ -897,6 +970,7 @@ export default function PlanViewer({ sheet }: Props) {
               scale={view.scale}
             />
           )}
+          <SnapMarkerLayer snap={snapApplies ? snap : null} scale={view.scale} />
           {showMarkups && (
             <MarkupLayer
               scale={view.scale}
@@ -934,6 +1008,12 @@ export default function PlanViewer({ sheet }: Props) {
             {tool !== 'select' || cutoutTarget ? ' · Esc to cancel' : ''}
           </span>
           {notice && <div className="mt-1 text-signal-orange-3">{notice}</div>}
+          {snapApplies && (
+            <div className="mt-0.5 text-xs text-foundation-grey" data-testid="snap-hint">
+              Snap on{snapSource?.sheetId === sheet.id && snapSource.source.kind === 'image' ? ' (approximate: this sheet is flattened)' : ''} · hold Alt to draw freely · S to turn off
+              {snap && <span className="text-chalk"> · {SNAP_LABEL[snap.kind]}</span>}
+            </div>
+          )}
           {noScaleWarning && (
             <div className="mt-1 text-signal-orange-3">
               No scale on this sheet — these shapes won’t count in totals until you calibrate.

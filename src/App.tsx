@@ -52,6 +52,11 @@ export default function App() {
         usePanels.getState().toggleFocus()
         return
       }
+      if (key === 's') {
+        const p = usePanels.getState()
+        p.setSnap(!p.snap)
+        return
+      }
       const tool = TOOL_KEYS[key]
       if (tool) setTool(tool)
     }
