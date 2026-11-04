@@ -394,6 +394,7 @@ function SelectedShape({ scaleInfos }: { scaleInfos: Record<string, SheetScaleIn
   const startCutout = useApp((s) => s.startCutout)
   const removeCutout = useApp((s) => s.removeCutout)
   const cutoutFor = useApp((s) => s.cutoutFor)
+  const dimStyle = usePanels((s) => s.dims.style)
   if (!takeoff) return null
   const item = items.find((i) => i.id === takeoff.itemId)
   if (!item) return null
@@ -433,7 +434,19 @@ function SelectedShape({ scaleInfos }: { scaleInfos: Record<string, SheetScaleIn
             ))}
         </select>
       </label>
-      <div className="mt-2 flex justify-end">
+      <div className="mt-2 flex items-center justify-between">
+        {item.kind !== 'count' && dimStyle === 'offset' ? (
+          <button
+            onClick={() => updateTakeoff(takeoff.id, { dimFlip: !takeoff.dimFlip })}
+            className="text-xs text-accent-text hover:underline"
+            title="Put this shape's dimensions on the other side of its lines"
+            data-testid="flip-dims"
+          >
+            Flip dimension side
+          </button>
+        ) : (
+          <span />
+        )}
         <button onClick={() => deleteTakeoff(takeoff.id)} className="text-xs text-red-700 hover:underline">
           Delete shape
         </button>

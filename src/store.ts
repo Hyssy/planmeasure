@@ -169,7 +169,7 @@ interface AppState {
   activateItem: (id: string) => void
   /** Add a finished shape to the active item (creating an item if needed). Returns its id. */
   addTakeoff: (sheetId: string, kind: TakeoffKind, points: Takeoff['points']) => string
-  updateTakeoff: (id: string, patch: Partial<Pick<Takeoff, 'points' | 'holes' | 'itemId'>>, recordUndo?: boolean) => void
+  updateTakeoff: (id: string, patch: Partial<Pick<Takeoff, 'points' | 'holes' | 'itemId' | 'dimFlip'>>, recordUndo?: boolean) => void
   deleteTakeoff: (id: string) => void
   selectTakeoff: (id: string | null) => void
   /** Area shape currently getting a cut-out drawn on it */

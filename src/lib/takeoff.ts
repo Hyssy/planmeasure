@@ -106,6 +106,8 @@ export interface Takeoff {
   points: Point[]
   /** area only: cut-outs (deductions) inside the outline */
   holes: Point[][]
+  /** put this shape's offset dimensions on the other side */
+  dimFlip?: boolean
 }
 
 /** What the quantities can be trusted for. */

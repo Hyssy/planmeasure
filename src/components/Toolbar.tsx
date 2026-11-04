@@ -3,6 +3,7 @@ import wordmark from '../assets/brand/cyclo-wordmark-chalk.svg'
 import { isFocused, usePanels } from '../panels'
 import { useApp, type Tool } from '../store'
 import ExportPdfDialog from './ExportPdfDialog'
+import SettingsDialog from './SettingsDialog'
 import ProjectMenu from './ProjectMenu'
 
 const TOOL_GROUPS: { id: Tool; label: string; key: string; hint: string }[][] = [
@@ -94,6 +95,7 @@ export default function Toolbar() {
         <Layers />
         <div className="mx-1 h-6 w-px bg-white/20" />
         <ExportPdfButton />
+        <SettingsButton />
       </div>
       <span className={`ml-auto hidden text-xs whitespace-nowrap text-foundation-grey ${slim ? '' : '2xl:inline'}`}>
         Scroll to zoom · Space+drag to pan · files stay on your computer
@@ -168,5 +170,22 @@ function SnapToggle() {
     >
       Snap {snap ? 'on' : 'off'}
     </button>
+  )
+}
+
+function SettingsButton() {
+  const [open, setOpen] = useState(false)
+  return (
+    <>
+      <button
+        onClick={() => setOpen(true)}
+        data-testid="settings-button"
+        title="Settings: dimensions and snapping"
+        className="rounded-md px-2.5 py-1.5 text-sm font-medium whitespace-nowrap text-chalk hover:bg-white/10"
+      >
+        Settings
+      </button>
+      {open && <SettingsDialog onClose={() => setOpen(false)} />}
+    </>
   )
 }

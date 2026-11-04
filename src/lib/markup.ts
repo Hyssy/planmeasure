@@ -75,11 +75,14 @@ export type Primitive =
   | { kind: 'circle'; at: Point; r: number; fill: string; stroke?: string; strokeWidth?: number }
   | {
       kind: 'text'
-      /** top-left of the text block */
+      /** top-left of the text block (before rotation) */
       at: Point
       lines: string[]
       fontSize: number
       colour: string
+      /** turn the block this many degrees clockwise about `at` (dimension figures along a line) */
+      angle?: number
+      bold?: boolean
       /** box behind the text */
       box?: { fill: string; stroke: string; padding: number; width: number; height: number }
     }

@@ -11,7 +11,9 @@ import { getSnapSource, imageTileAt, type SnapSource } from '../lib/snapSource'
 import SnapMarkerLayer from './SnapMarker'
 import { isTakeoffTool, scaleInfo, useApp, type DrawStyle } from '../store'
 import TakeoffLayer, { type TakeoffDraft } from './TakeoffLayer'
-import MarkupLayer from './MarkupLayer'
+import MarkupLayer, { PrimitivesShape } from './MarkupLayer'
+import { shapeDimensions } from '../lib/dimensions'
+import { screenLook } from '../lib/dimensionLooks'
 import AreaBoxes from './AreaBoxes'
 import { areaFromPoints, FIELD_LABEL } from '../lib/labelAreas'
 import { measureScreenText } from '../lib/measureText'
@@ -796,7 +798,12 @@ export default function PlanViewer({ sheet }: Props) {
     const text = formatLength(realMm(distancePt(a, b), scale.realMmPerPt))
     return scale.status === 'confirmed' ? text : `${text} (unverified)`
   }
+  const dimPrefs = usePanels((s) => s.dims)
+  const dimsOn = dimPrefs.show !== 'off'
+  const dimLook = view ? screenLook(dimPrefs, view.scale) : null
   const overlayLines: OverlayLine[] = []
+  /** Measure tool lines drawn as dimensions (when dimensions are on). */
+  const measureDims: Point[][] = []
   const measuring = tool === 'calibrate' || tool === 'measure'
   const toolColour = tool === 'calibrate' ? '#c2410c' : '#1d4ed8'
   if (measuring && draft.length === 1 && cursor) {
@@ -804,13 +811,15 @@ export default function PlanViewer({ sheet }: Props) {
       points: [draft[0], cursor],
       colour: toolColour,
       dashed: true,
-      label: tool === 'measure' ? lengthLabel(draft[0], cursor) : undefined,
+      label: tool === 'measure' && !dimsOn ? lengthLabel(draft[0], cursor) : undefined,
     })
+    if (tool === 'measure' && dimsOn) measureDims.push([draft[0], cursor])
   } else if (measuring && draft.length === 1) {
     overlayLines.push({ points: draft, colour: toolColour })
   }
   if (measured) {
-    overlayLines.push({ points: measured, colour: '#1d4ed8', label: lengthLabel(measured[0], measured[1]) })
+    overlayLines.push({ points: measured, colour: '#1d4ed8', label: dimsOn ? undefined : lengthLabel(measured[0], measured[1]) })
+    if (dimsOn) measureDims.push(measured)
   }
   if (calibLine) overlayLines.push({ points: calibLine, colour: '#c2410c' })
 
@@ -959,6 +968,7 @@ export default function PlanViewer({ sheet }: Props) {
               selectedId={selectedId}
               selectedLabel={selectedLabel}
               draft={takeoffDraft}
+              dims={{ look: dimLook, show: dimPrefs.show, realMmPerPt: scale?.realMmPerPt ?? null }}
             />
           )}
           {tool === 'areas' && (
@@ -970,6 +980,10 @@ export default function PlanViewer({ sheet }: Props) {
               scale={view.scale}
             />
           )}
+          {dimLook &&
+            measureDims.map((line, i) => (
+              <PrimitivesShape key={`mdim-${i}`} prims={shapeDimensions(line, false, scale?.realMmPerPt ?? null, dimLook, false, measureScreenText)} />
+            ))}
           <SnapMarkerLayer snap={snapApplies ? snap : null} scale={view.scale} />
           {showMarkups && (
             <MarkupLayer

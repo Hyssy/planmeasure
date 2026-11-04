@@ -2,6 +2,9 @@ import { Circle, Group, Label, Line, Shape, Tag, Text } from 'react-konva'
 import { polygonCentroid, signedAreaPt2 } from '../lib/geometry'
 import type { Point } from '../lib/scale'
 import type { Item, Takeoff, TakeoffKind } from '../lib/takeoff'
+import { shapeDimensions, type DimensionLook } from '../lib/dimensions'
+import { measureScreenText } from '../lib/measureText'
+import { PrimitivesShape } from './MarkupLayer'
 
 export interface TakeoffDraft {
   kind: TakeoffKind | 'cutout'
@@ -22,6 +25,8 @@ interface Props {
   /** label for the selected shape, e.g. "24.00 m²" */
   selectedLabel?: string
   draft: TakeoffDraft | null
+  /** segment dimensions: how they look (null = off), which shapes show them, and the sheet's scale */
+  dims?: { look: DimensionLook | null; show: 'selected' | 'all' | 'off'; realMmPerPt: number | null }
 }
 
 const MARKER_RADIUS = 7
@@ -30,8 +35,12 @@ const MARKER_RADIUS = 7
  * Draws takeoff shapes (in page points) inside the overlay's scaled layer.
  * Drawing only — clicks are handled by the viewer.
  */
-export default function TakeoffLayer({ scale: s, takeoffs, items, selectedId, selectedLabel, draft }: Props) {
+export default function TakeoffLayer({ scale: s, takeoffs, items, selectedId, selectedLabel, draft, dims }: Props) {
   const selected = takeoffs.find((t) => t.id === selectedId)
+  const look = dims?.show !== 'off' ? (dims?.look ?? null) : null
+  // only label segments long enough to read on screen (≈40 px), so freehand shapes don't fill with figures
+  const dimPrims = (points: Point[], closed: boolean, flip = false) =>
+    look ? shapeDimensions(points, closed, dims!.realMmPerPt, look, flip, measureScreenText, 40 / s) : []
   return (
     <>
       {takeoffs.map((t) => {
@@ -44,7 +53,24 @@ export default function TakeoffLayer({ scale: s, takeoffs, items, selectedId, se
         <SelectionHandles t={selected} kind={items.get(selected.itemId)!.kind} s={s} label={selectedLabel} />
       )}
 
+      {look &&
+        takeoffs.map((t) => {
+          const kind = items.get(t.itemId)?.kind
+          if (!kind || kind === 'count') return null
+          if (dims!.show === 'selected' && t.id !== selectedId) return null
+          return <PrimitivesShape key={`dim-${t.id}`} prims={dimPrims(t.points, kind !== 'linear', t.dimFlip)} />
+        })}
+
       {draft && <DraftShape draft={draft} s={s} />}
+      {draft && look && draft.kind !== 'cutout' && (
+        <PrimitivesShape
+          prims={dimPrims(
+            draft.cursor ? [...draft.points, draft.cursor] : draft.points,
+            // rectangle previews are complete outlines; clicked shapes are still open while drawing
+            draft.kind !== 'linear' && draft.handles === false && !draft.cursor,
+          )}
+        />
+      )}
     </>
   )
 }

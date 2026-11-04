@@ -26,6 +26,7 @@ export class PdfExportError extends Error {}
 export async function buildMarkedUpPdf(sources: Map<string, Uint8Array>, pages: ExportPage[]): Promise<Uint8Array> {
   const out = await PDFDocument.create()
   const font = await out.embedFont(StandardFonts.Helvetica)
+  const bold = await out.embedFont(StandardFonts.HelveticaBold)
   const measure: MeasureText = (line, size) => font.widthOfTextAtSize(winAnsiSafe(line, font), size)
   const loaded = new Map<string, PDFDocument>()
 
@@ -44,7 +45,7 @@ export async function buildMarkedUpPdf(sources: Map<string, Uint8Array>, pages: 
     const [page] = await out.copyPages(src, [pg.pageNumber - 1])
     out.addPage(page)
     isolateOriginalContent(out, page)
-    for (const prim of pg.build(measure)) drawPrimitive(page, prim, pg.toPdf, font, measure)
+    for (const prim of pg.build(measure)) drawPrimitive(page, prim, pg.toPdf, prim.kind === 'text' && prim.bold ? bold : font, measure)
   }
   out.setProducer('CycloMeasure')
   out.setCreator('CycloMeasure')
@@ -91,11 +92,15 @@ function drawPrimitive(page: PDFPage, prim: Primitive, toPdf: ExportPage['toPdf'
     return
   }
 
-  // text: optional box, then each line, turned to match the page as displayed
+  // text: optional box, then each line — turned by the text's own angle, and to match the page as displayed
+  const rad = ((prim.angle ?? 0) * Math.PI) / 180
+  const ux = Math.cos(rad)
+  const uy = Math.sin(rad)
+  // a point in the text block's own frame (x along the text, y down the lines) → displayed page
+  const local = (x: number, y: number): Point => ({ x: prim.at.x + x * ux - y * uy, y: prim.at.y + x * uy + y * ux })
   if (prim.box) {
-    const { x, y } = prim.at
     const { width: w, height: h } = prim.box
-    const box = [{ x, y }, { x: x + w, y }, { x: x + w, y: y + h }, { x, y: y + h }]
+    const box = [local(0, 0), local(w, 0), local(w, h), local(0, h)]
     page.drawSvgPath(svgPath([box], true, toPdf)!, {
       x: 0,
       y: 0,
@@ -106,14 +111,16 @@ function drawPrimitive(page: PDFPage, prim: Primitive, toPdf: ExportPage['toPdf'
     })
   }
   const pad = prim.box?.padding ?? 0
-  const angle = displayAngle(toPdf)
   prim.lines.forEach((line, i) => {
     const text = winAnsiSafe(line, font)
     if (!text) return
     // baseline: top of the line plus the font's ascent (about 0.8 of its size)
-    const base = { x: prim.at.x + pad, y: prim.at.y + pad + prim.fontSize * (i * LINE_HEIGHT + 0.8 + (LINE_HEIGHT - 1) / 2) }
+    const base = local(pad, pad + prim.fontSize * (i * LINE_HEIGHT + 0.8 + (LINE_HEIGHT - 1) / 2))
     const [x, y] = toPdf(base)
-    page.drawText(text, { x, y, size: prim.fontSize, font, color: colour(prim.colour), rotate: degrees(angle) })
+    // the text's direction on the PDF page: where "along the text" ends up
+    const [x1, y1] = toPdf({ x: base.x + ux * 100, y: base.y + uy * 100 })
+    const rotate = (Math.atan2(y1 - y, x1 - x) * 180) / Math.PI
+    page.drawText(text, { x, y, size: prim.fontSize, font, color: colour(prim.colour), rotate: degrees(rotate) })
   })
   void measure
 }
@@ -130,13 +137,6 @@ function svgPath(rings: Point[][], closed: boolean, toPdf: ExportPage['toPdf']):
     if (closed) parts.push('Z')
   }
   return parts.length ? parts.join(' ') : null
-}
-
-/** Which way "left to right on screen" runs in the PDF's coordinates, in degrees. */
-function displayAngle(toPdf: ExportPage['toPdf']): number {
-  const [x0, y0] = toPdf({ x: 0, y: 0 })
-  const [x1, y1] = toPdf({ x: 100, y: 0 })
-  return (Math.atan2(y1 - y0, x1 - x0) * 180) / Math.PI
 }
 
 function colour(hex: string) {

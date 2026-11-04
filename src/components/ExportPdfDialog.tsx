@@ -1,16 +1,19 @@
 import { useState } from 'react'
 import { exportMarkedUpPdf, markedSheetIds, sheetsToExport, type PageChoice, type PdfExportOptions } from '../exportPdf'
+import { usePanels } from '../panels'
 import { sheetName, useApp } from '../store'
 
 /** Choose pages and layers, then export a marked-up PDF. */
 export default function ExportPdfDialog({ onClose }: { onClose: () => void }) {
   const state = useApp()
+  const dimPrefs = usePanels((s) => s.dims)
   const current = state.sheets.findIndex((s) => s.id === state.selectedSheetId)
   const [opts, setOpts] = useState<PdfExportOptions>({
     pages: 'marked',
     markups: state.showMarkups,
     takeoffs: state.showTakeoffs,
     labels: state.showTakeoffs,
+    dimensions: dimPrefs.show !== 'off' && state.showTakeoffs ? dimPrefs : null,
   })
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -48,10 +51,20 @@ export default function ExportPdfDialog({ onClose }: { onClose: () => void }) {
             <input type="checkbox" checked={opts.markups} onChange={(e) => setOpts({ ...opts, markups: e.target.checked })} /> Markups
           </label>
           <label className="flex items-center gap-2 p-1">
-            <input type="checkbox" checked={opts.takeoffs} onChange={(e) => setOpts({ ...opts, takeoffs: e.target.checked, labels: e.target.checked && opts.labels })} /> Takeoff shapes
+            <input type="checkbox" checked={opts.takeoffs} onChange={(e) => setOpts({ ...opts, takeoffs: e.target.checked, labels: e.target.checked && opts.labels, dimensions: e.target.checked ? opts.dimensions : null })} /> Takeoff shapes
           </label>
           <label className={`flex items-center gap-2 p-1 pl-6 ${opts.takeoffs ? '' : 'opacity-40'}`}>
             <input type="checkbox" disabled={!opts.takeoffs} checked={opts.labels} onChange={(e) => setOpts({ ...opts, labels: e.target.checked })} /> Item names and quantities on the shapes
+          </label>
+          <label className={`flex items-center gap-2 p-1 pl-6 ${opts.takeoffs ? '' : 'opacity-40'}`}>
+            <input
+              type="checkbox"
+              disabled={!opts.takeoffs}
+              checked={!!opts.dimensions}
+              onChange={(e) => setOpts({ ...opts, dimensions: e.target.checked ? { ...dimPrefs, show: 'all' } : null })}
+              data-testid="export-dims"
+            />{' '}
+            Dimensions ({dimPrefs.style === 'offset' ? 'beside the line' : 'on the line'}, {dimPrefs.units === 'mm' ? 'mm' : 'm'})
           </label>
         </fieldset>
 

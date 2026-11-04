@@ -35,7 +35,7 @@ export function PrimitivesShape({ prims }: { prims: Primitive[] }) {
         if (p.kind === 'text') {
           const pad = p.box?.padding ?? 0
           return (
-            <Group key={i} x={p.at.x} y={p.at.y}>
+            <Group key={i} x={p.at.x} y={p.at.y} rotation={p.angle ?? 0}>
               {p.box && <Rect width={p.box.width} height={p.box.height} fill={p.box.fill} opacity={0.9} stroke={p.box.stroke} strokeWidth={Math.max(0.75, p.fontSize / 14)} />}
               <Text
                 x={pad}
@@ -44,6 +44,7 @@ export function PrimitivesShape({ prims }: { prims: Primitive[] }) {
                 fontSize={p.fontSize}
                 lineHeight={LINE_HEIGHT}
                 fontFamily="Arial, Helvetica, sans-serif"
+                fontStyle={p.bold ? 'bold' : 'normal'}
                 fill={p.colour}
               />
             </Group>

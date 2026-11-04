@@ -7,6 +7,10 @@ import { getPageToPdf } from './lib/pdf'
 import { buildMarkedUpPdf, type ExportPage } from './lib/pdfExport'
 import { formatQuantity, takeoffQuantity } from './lib/takeoff'
 import { scaleInfo, sheetName, useApp } from './store'
+import { shapeDimensions } from './lib/dimensions'
+import { paperLook } from './lib/dimensionLooks'
+import { mmToPt } from './lib/units'
+import type { DimensionPrefs } from './panels'
 
 export type PageChoice = 'current' | 'marked' | 'all'
 
@@ -16,6 +20,8 @@ export interface PdfExportOptions {
   takeoffs: boolean
   /** put each takeoff's item name and quantity on the drawing */
   labels: boolean
+  /** segment dimensions on takeoff shapes (style and units from the user's dimension settings) */
+  dimensions?: DimensionPrefs | null
 }
 
 type State = ReturnType<typeof useApp.getState>
@@ -59,6 +65,14 @@ export async function exportMarkedUpPdf(opts: PdfExportOptions): Promise<number>
         for (const t of takeoffs) {
           const item = itemsById.get(t.itemId)
           if (item) prims.push(...takeoffPrimitives(t, item))
+        }
+        if (opts.dimensions) {
+          const look = paperLook(opts.dimensions)
+          for (const t of takeoffs) {
+            const kind = itemsById.get(t.itemId)?.kind
+            if (!kind || kind === 'count') continue
+            prims.push(...shapeDimensions(t.points, kind !== 'linear', scale?.realMmPerPt ?? null, look, !!t.dimFlip, measure, mmToPt(8)))
+          }
         }
         if (opts.labels) {
           for (const t of takeoffs) {

@@ -3,6 +3,17 @@
  * in this browser's local storage (not in the project).
  */
 import { create } from 'zustand'
+import type { DimensionStyle, DimensionUnits } from './lib/dimensions'
+
+/** How lengths are shown on shapes (a personal preference). */
+export interface DimensionPrefs {
+  style: DimensionStyle
+  /** which shapes show their segment lengths */
+  show: 'selected' | 'all' | 'off'
+  units: DimensionUnits
+  size: 'normal' | 'large'
+}
+export const DEFAULT_DIMS: DimensionPrefs = { style: 'offset', show: 'selected', units: 'm', size: 'normal' }
 
 export interface PanelState {
   sheets: boolean
@@ -14,17 +25,17 @@ type PanelName = keyof PanelState
 const KEY = 'planmeasure.panels'
 const ALL_OPEN: PanelState = { sheets: true, items: true, scaleBar: true }
 
-function load(): { open: PanelState; beforeFocus: PanelState | null; snap: boolean } {
+function load(): { open: PanelState; beforeFocus: PanelState | null; snap: boolean; dims: DimensionPrefs } {
   try {
     const raw = localStorage.getItem(KEY)
     if (raw) {
       const p = JSON.parse(raw)
-      return { open: { ...ALL_OPEN, ...p.open }, beforeFocus: p.beforeFocus ?? null, snap: p.snap ?? true }
+      return { open: { ...ALL_OPEN, ...p.open }, beforeFocus: p.beforeFocus ?? null, snap: p.snap ?? true, dims: { ...DEFAULT_DIMS, ...p.dims } }
     }
   } catch {
     // storage unavailable (private window etc.) — just use the defaults
   }
-  return { open: ALL_OPEN, beforeFocus: null, snap: true }
+  return { open: ALL_OPEN, beforeFocus: null, snap: true, dims: DEFAULT_DIMS }
 }
 
 interface Panels {
@@ -37,11 +48,14 @@ interface Panels {
   /** Snap to the drawing's linework while drawing (a personal preference). */
   snap: boolean
   setSnap: (on: boolean) => void
+  dims: DimensionPrefs
+  setDims: (patch: Partial<DimensionPrefs>) => void
 }
 
 export const usePanels = create<Panels>((set, get) => ({
   ...load(),
   setSnap: (on) => set({ snap: on }),
+  setDims: (patch) => set((s) => ({ dims: { ...s.dims, ...patch } })),
   setPanel: (name, open) => set((s) => ({ open: { ...s.open, [name]: open }, beforeFocus: null })),
   toggleFocus: () => {
     const { open, beforeFocus } = get()
@@ -53,7 +67,7 @@ export const usePanels = create<Panels>((set, get) => ({
 
 usePanels.subscribe((s) => {
   try {
-    localStorage.setItem(KEY, JSON.stringify({ open: s.open, beforeFocus: s.beforeFocus, snap: s.snap }))
+    localStorage.setItem(KEY, JSON.stringify({ open: s.open, beforeFocus: s.beforeFocus, snap: s.snap, dims: s.dims }))
   } catch {
     // ignore — it's only a convenience
   }
