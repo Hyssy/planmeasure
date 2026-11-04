@@ -95,7 +95,7 @@ export interface ScaleCandidate {
 
 /** Scales architects and engineers actually use. Unlabelled ratios must be one of these. */
 export const COMMON_RATIOS = [
-  1, 2, 5, 10, 20, 25, 50, 75, 100, 125, 200, 250, 500, 750, 1000, 1250, 2000, 2500, 5000,
+  1, 2, 5, 10, 20, 25, 50, 75, 100, 125, 150, 200, 250, 500, 750, 1000, 1250, 2000, 2500, 5000,
 ]
 
 // "1:100", "1 : 100", optionally preceded by "SCALE" and followed by "@ A1" / "AT A1".

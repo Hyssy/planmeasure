@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import {
+  COMMON_RATIOS,
   distancePt,
   distinctScales,
   equivalentRatio,
@@ -124,5 +125,16 @@ describe('scale detection from text', () => {
 
   it('finds nothing on a sheet with no scale', () => {
     expect(scales('NOT TO SCALE')).toEqual([])
+  })
+})
+
+describe('1:150', () => {
+  it('is a standard scale, detected even without a "SCALE" label', () => {
+    expect(COMMON_RATIOS).toContain(150)
+    expect(findScaleCandidates('LEVEL 2 PLAN 1:150').map((c) => c.ratio)).toEqual([150])
+  })
+  it('measures correctly: 100 mm on paper is 15 m', () => {
+    expect(mmPerPtFromRatio(150)).toBeCloseTo(0.352778 * 150, 4)
+    expect(realMm(mmToPt(100), mmPerPtFromRatio(150))).toBeCloseTo(15000, 6)
   })
 })
