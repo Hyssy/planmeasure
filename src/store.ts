@@ -2,6 +2,7 @@ import { create } from 'zustand'
 import { areaInPoints, readNumber, readScales, readTitle, textInArea, type LabelAreas, type LabelField, type AreaRect } from './lib/labelAreas'
 import { needsOcr, ocrArea, ocrSheetText } from './lib/ocr'
 import { regionFor, type ScaleRegion } from './lib/scaleRegions'
+import { cleanSupersedes, findVersionMatches, isSuperseded, type Supersedes, type VersionMatch } from './lib/versions'
 import * as db from './lib/db'
 import { closeAllDocuments, getPageText, loadPdfBytes, newFileId, renderThumbnail, type PageText, type SheetMeta } from './lib/pdf'
 import {
@@ -133,6 +134,18 @@ interface AppState {
   openFiles: (files: File[]) => Promise<void>
   /** PDFs waiting for "add to this project or start a new one?" */
   pendingFiles: File[] | null
+  /** sheet versions: supersedes[newSheetId] = the sheet it replaces */
+  supersedes: Supersedes
+  /** added sheets that look like new versions of existing ones, waiting for the user to decide */
+  pendingVersions: VersionMatch[] | null
+  /** mark sheets as new versions; `compare` opens Compare revisions on them */
+  markVersions: (matches: VersionMatch[], compare?: boolean) => void
+  dismissVersions: () => void
+  /** "this isn't a new version": show it as its own sheet again */
+  unmarkVersion: (newId: string) => void
+  /** version pairs to open in Compare revisions (set by markVersions or the sheet list) */
+  compareRequest: VersionMatch[] | null
+  setCompareRequest: (pairs: VersionMatch[] | null) => void
   /** Open PDFs, asking first if the project already has plans. */
   requestOpenFiles: (files: File[]) => void
   resolvePendingFiles: (choice: 'add' | 'new' | 'cancel') => Promise<void>
@@ -311,6 +324,9 @@ function emptyProject(): Partial<AppState> {
     labelAreas: {},
     itemsPerSheet: true,
     scaleRegions: [],
+    supersedes: {},
+    pendingVersions: null,
+    compareRequest: null,
     pendingRegion: null,
     areaPreview: {},
     areaApply: null,
@@ -341,6 +357,7 @@ export function toProjectData(s: AppState): ProjectData {
     labelAreas: s.labelAreas,
     settings: { itemsPerSheet: s.itemsPerSheet },
     scaleRegions: s.scaleRegions,
+    versions: s.supersedes,
     selectedSheetId: s.selectedSheetId,
   }
 }
@@ -416,8 +433,44 @@ export const useApp = create<AppState>((set, get) => ({
     set({ pendingFiles: null })
     if (!files || choice === 'cancel') return
     if (choice === 'new') get().newProject()
+    // the drawings already here (current versions only), to spot new versions of them
+    const before = get()
+    const existing = before.sheets.filter((sh) => !isSuperseded(sh.id, before.supersedes)).map((sh) => sh.id)
+    const known = new Set(before.sheets.map((sh) => sh.id))
+    const gen = generation
     await get().openFiles(files)
+    if (gen !== generation || choice === 'new') return
+    const s = get()
+    const added = s.sheets.filter((sh) => !known.has(sh.id))
+    const matches = findVersionMatches(
+      existing.map((id) => ({ id, number: s.labels[id]?.number })),
+      added.map((sh) => ({ id: sh.id, number: s.labels[sh.id]?.number })),
+    )
+    if (matches.length) set({ pendingVersions: matches })
   },
+  supersedes: {},
+  pendingVersions: null,
+  markVersions: (matches, compare) =>
+    set((s) => {
+      const supersedes = { ...s.supersedes }
+      for (const m of matches) supersedes[m.newId] = m.oldId
+      const moved = matches.find((m) => m.oldId === s.selectedSheetId)
+      return {
+        supersedes,
+        pendingVersions: null,
+        selectedSheetId: moved ? moved.newId : s.selectedSheetId,
+        compareRequest: compare && matches.length ? matches : s.compareRequest,
+      }
+    }),
+  dismissVersions: () => set({ pendingVersions: null }),
+  unmarkVersion: (newId) =>
+    set((s) => {
+      const supersedes = { ...s.supersedes }
+      delete supersedes[newId]
+      return { supersedes }
+    }),
+  compareRequest: null,
+  setCompareRequest: (pairs) => set({ compareRequest: pairs }),
   activeItemId: null,
   selectedTakeoffId: null,
   cutoutFor: null,
@@ -531,6 +584,7 @@ export const useApp = create<AppState>((set, get) => ({
         labelAreas: data.labelAreas ?? {},
         itemsPerSheet: data.settings?.itemsPerSheet ?? true,
         scaleRegions: (data.scaleRegions as ScaleRegion[] | undefined) ?? [],
+        supersedes: cleanSupersedes(data.versions ?? {}, new Set(sheets.map((sh) => sh.id))),
         selectedSheetId: sheets.some((sh) => sh.id === data.selectedSheetId) ? data.selectedSheetId : (sheets[0]?.id ?? null),
         restoring: false,
         loading: false,

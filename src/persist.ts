@@ -8,7 +8,7 @@ import { toProjectData, useApp } from './store'
 type State = ReturnType<typeof useApp.getState>
 
 /** The parts of state that are saved — a change to any of these triggers a save. */
-const SAVED_KEYS = ['projectName', 'files', 'sheets', 'labels', 'scales', 'detections', 'items', 'takeoffs', 'markups', 'labelAreas', 'itemsPerSheet', 'scaleRegions', 'selectedSheetId'] as const
+const SAVED_KEYS = ['projectName', 'files', 'sheets', 'labels', 'scales', 'detections', 'items', 'takeoffs', 'markups', 'labelAreas', 'itemsPerSheet', 'scaleRegions', 'supersedes', 'selectedSheetId'] as const
 
 const DELAY_MS = 800
 

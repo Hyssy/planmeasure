@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import { compareSheets, pairSheets, type Comparison, type Grey } from '../lib/compare'
 import { getPageText, loadPdfBytes, newFileId, renderPage, type SheetMeta } from '../lib/pdf'
 import { detectSheetLabel } from '../lib/sheetLabel'
+import { isSuperseded, type VersionMatch } from '../lib/versions'
 import { sheetName, useApp } from '../store'
 
 /** Rendered size of the longer side when comparing (pixels). About 0.4 mm per pixel on an A1 sheet. */
@@ -23,14 +24,25 @@ interface Pair {
 }
 
 /** Compare this project's sheets with another version of the plans. */
-export default function CompareModule({ onClose }: { onClose: () => void }) {
+export default function CompareModule({ onClose, versionPairs }: { onClose: () => void; versionPairs?: VersionMatch[] }) {
   const [projectIs, setProjectIs] = useState<'new' | 'old'>('new')
   const [others, setOthers] = useState<OtherSheet[] | null>(null)
   const [loading, setLoading] = useState(false)
-  const [pairs, setPairs] = useState<Pair[] | null>(null)
-  const [viewing, setViewing] = useState(false)
-  const sheets = useApp((s) => s.sheets)
+  const allSheets = useApp((s) => s.sheets)
   const labels = useApp((s) => s.labels)
+  const supersedes = useApp((s) => s.supersedes)
+  // compare against the current version of each drawing
+  const sheets = useMemo(() => allSheets.filter((s) => !isSuperseded(s.id, supersedes)), [allSheets, supersedes])
+  /** new versions in this project, paired with the version they replace */
+  const inProject = (list: VersionMatch[]): Pair[] =>
+    list.flatMap((m) => {
+      const mine = allSheets.find((s) => s.id === m.newId)
+      const old = allSheets.find((s) => s.id === m.oldId)
+      return mine && old ? [{ mine, other: { sheet: old, number: labels[old.id]?.number ?? '' } }] : []
+    })
+  const [pairs, setPairs] = useState<Pair[] | null>(() => (versionPairs ? inProject(versionPairs) : null))
+  const [viewing, setViewing] = useState(!!versionPairs)
+  const versionCount = Object.keys(supersedes).length
 
   const openOther = async (files: File[]) => {
     setLoading(true)
@@ -57,7 +69,7 @@ export default function CompareModule({ onClose }: { onClose: () => void }) {
     setLoading(false)
   }
 
-  if (viewing && pairs) return <CompareView pairs={pairs} projectIs={projectIs} onBack={() => setViewing(false)} onClose={onClose} />
+  if (viewing && pairs) return <CompareView pairs={pairs} projectIs={projectIs} onBack={versionPairs ? onClose : () => setViewing(false)} backLabel={versionPairs ? 'Back' : 'Pairs…'} onClose={onClose} />
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/30" onMouseDown={(e) => e.target === e.currentTarget && onClose()}>
@@ -69,6 +81,26 @@ export default function CompareModule({ onClose }: { onClose: () => void }) {
           </button>
         </div>
         <p className="mt-1 text-neutral-600">Compare this project’s sheets with another version of the plans. The other version is only opened for comparing; it isn’t added to your project.</p>
+
+        {versionCount > 0 && (
+          <div className="mt-3 rounded border border-steel-blue-3 bg-steel-blue-4 p-2">
+            <p>
+              This project has {versionCount} sheet{versionCount === 1 ? '' : 's'} with a newer version.
+            </p>
+            <button
+              onClick={() => {
+                setProjectIs('new')
+                setPairs(inProject(Object.entries(supersedes).map(([newId, oldId]) => ({ newId, oldId }))))
+                setViewing(true)
+              }}
+              className="mt-1.5 rounded bg-accent px-3 py-1 text-xs font-medium text-graphite hover:bg-accent-hover"
+              data-testid="compare-in-project"
+            >
+              Compare each new version with its previous one
+            </button>
+            <p className="mt-1.5 text-xs text-neutral-500">Or compare with plans that aren’t in this project:</p>
+          </div>
+        )}
 
         <div className="mt-3 flex items-center gap-3">
           <span className="text-neutral-600">This project is the</span>
@@ -173,7 +205,7 @@ function toGrey(c: HTMLCanvasElement): Grey {
 
 type Mode = 'slider' | 'overlay'
 
-function CompareView(props: { pairs: Pair[]; projectIs: 'new' | 'old'; onBack: () => void; onClose: () => void }) {
+function CompareView(props: { pairs: Pair[]; projectIs: 'new' | 'old'; onBack: () => void; backLabel: string; onClose: () => void }) {
   const compared = useMemo(() => props.pairs.filter((p) => p.other), [props.pairs])
   const selectedSheetId = useApp((s) => s.selectedSheetId)
   const labels = useApp((s) => s.labels)
@@ -327,7 +359,7 @@ function CompareView(props: { pairs: Pair[]; projectIs: 'new' | 'old'; onBack: (
         </label>
         <div className="ml-auto flex items-center gap-2">
           <button onClick={props.onBack} className="rounded px-2.5 py-1 hover:bg-white/10">
-            Pairs…
+            {props.backLabel}
           </button>
           <button onClick={props.onClose} className="rounded border border-chalk/60 px-2.5 py-1 hover:bg-white/10" data-testid="compare-close">
             Close

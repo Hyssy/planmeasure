@@ -42,6 +42,8 @@ export interface ProjectData {
   settings?: { itemsPerSheet?: boolean }
   /** scale areas: parts of sheets at a different scale (added later — older files have none) */
   scaleRegions?: unknown[]
+  /** sheet versions: new sheet id → the sheet it replaces (added later — older files have none) */
+  versions?: Record<string, string>
   selectedSheetId: string | null
 }
 

@@ -20,6 +20,7 @@ import {
   type Takeoff,
   type TakeoffKind,
 } from '../lib/takeoff'
+import { isSuperseded, versionNumber } from '../lib/versions'
 import { sheetName, TAKEOFF_TOOLS, takeoffScales, useApp } from '../store'
 
 type Scope = 'sheet' | 'project'
@@ -45,9 +46,14 @@ export default function ItemsPanel() {
   const scaleInfos = useMemo(() => takeoffScales({ scales, scaleRegions }), [scales, scaleRegions])
 
   const inScope = scope === 'sheet' ? takeoffs.filter((t) => t.sheetId === selectedSheetId) : takeoffs
+  const supersedes = useApp((s) => s.supersedes)
   const sheetLabel = (id: string) => {
     const i = sheets.findIndex((s) => s.id === id)
-    return sheetName(labels[id], i)
+    const name = sheetName(labels[id], i)
+    // takeoffs on a sheet that has a newer version: say so
+    if (isSuperseded(id, supersedes)) return `${name} (v${versionNumber(id, supersedes)}, old version)`
+    const v = versionNumber(id, supersedes)
+    return v > 1 ? `${name} (v${v})` : name
   }
 
   if (!panelOpen) return <CollapsedRail side="right" label="Items & quantities" onOpen={() => setPanel('items', true)} testId="open-items" />

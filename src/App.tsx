@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import AddPlansDialog from './components/AddPlansDialog'
+import VersionsDialog, { CompareRequest } from './components/VersionsDialog'
 import ItemsPanel from './components/ItemsPanel'
 import OptionsBar from './components/OptionsBar'
 import PlanViewer from './components/PlanViewer'
@@ -137,6 +138,8 @@ export default function App() {
         </div>
       )}
       <AddPlansDialog />
+      <VersionsDialog />
+      <CompareRequest />
     </div>
   )
 }

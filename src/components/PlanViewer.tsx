@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
+import { isSuperseded, latestVersion, versionNumber } from '../lib/versions'
 import { renderPage, type RenderHandle, type SheetMeta } from '../lib/pdf'
 import { distancePt, equivalentRatio, formatLength, formatRatio, mmPerPtFromRatio, realMm, type Point } from '../lib/scale'
 import { describePaperSize } from '../lib/units'
@@ -1074,6 +1075,8 @@ export default function PlanViewer({ sheet }: Props) {
         />
       )}
 
+      <OldVersionBanner sheetId={sheet.id} />
+
       {hint && !calibLine && !textEdit && (
         <div
           data-testid="tool-hint"
@@ -1289,6 +1292,28 @@ function ViewControls() {
           {fullScreen ? 'Exit full screen' : 'Full screen'}
         </button>
       )}
+    </div>
+  )
+}
+
+/** On an earlier version of a sheet: say so, and offer the latest. */
+function OldVersionBanner({ sheetId }: { sheetId: string }) {
+  const supersedes = useApp((s) => s.supersedes)
+  const selectSheet = useApp((s) => s.selectSheet)
+  if (!isSuperseded(sheetId, supersedes)) return null
+  const latest = latestVersion(sheetId, supersedes)
+  return (
+    <div
+      className="absolute bottom-10 left-1/2 z-10 flex -translate-x-1/2 items-center gap-3 rounded border border-signal-orange-3 bg-signal-orange-4 px-3 py-1.5 text-sm text-graphite"
+      onPointerDown={(e) => e.stopPropagation()}
+      data-testid="old-version-banner"
+    >
+      <span>
+        <span className="font-semibold">Old version (v{versionNumber(sheetId, supersedes)})</span> · there’s a newer version of this sheet (v{versionNumber(latest, supersedes)}).
+      </span>
+      <button onClick={() => selectSheet(latest)} className="rounded bg-accent px-2 py-0.5 text-xs font-medium text-graphite hover:bg-accent-hover">
+        Open v{versionNumber(latest, supersedes)}
+      </button>
     </div>
   )
 }
