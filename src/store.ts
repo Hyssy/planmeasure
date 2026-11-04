@@ -2,6 +2,7 @@ import { create } from 'zustand'
 import { areaInPoints, readNumber, readScales, readTitle, textInArea, type LabelAreas, type LabelField, type AreaRect } from './lib/labelAreas'
 import { needsOcr, ocrArea, ocrSheetText } from './lib/ocr'
 import { regionFor, type ScaleRegion } from './lib/scaleRegions'
+import { moveToVersion, type PageTransform } from './lib/moveVersion'
 import { cleanSupersedes, findVersionMatches, isSuperseded, type Supersedes, type VersionMatch } from './lib/versions'
 import * as db from './lib/db'
 import { closeAllDocuments, getPageText, loadPdfBytes, newFileId, renderThumbnail, type PageText, type SheetMeta } from './lib/pdf'
@@ -154,6 +155,15 @@ interface AppState {
   unmarkVersion: (newId: string) => void
   /** version pairs to open in Compare revisions (set by markVersions or the sheet list) */
   compareRequest: VersionMatch[] | null
+  /** old sheet ids whose takeoffs the user wants to move to the new version (opens the Move dialog) */
+  moveRequest: string[] | null
+  setMoveRequest: (oldIds: string[] | null) => void
+  /**
+   * Move takeoffs (and markups if asked) from old versions to their new versions,
+   * shifted by each pair's alignment. Undoable. `copyScale` lists new sheets that
+   * take the old version's scale (only offered for the same paper size).
+   */
+  moveToNewVersions: (moves: { oldId: string; newId: string; t: PageTransform }[], opts: { markups: boolean; copyScale: string[] }) => { takeoffs: number; markups: number }
   setCompareRequest: (pairs: VersionMatch[] | null) => void
   /** Open PDFs, asking first if the project already has plans. */
   requestOpenFiles: (files: File[]) => void
@@ -336,6 +346,7 @@ function emptyProject(): Partial<AppState> {
     supersedes: {},
     pendingVersions: null,
     compareRequest: null,
+    moveRequest: null,
     pendingRegion: null,
     areaPreview: {},
     areaApply: null,
@@ -492,6 +503,31 @@ export const useApp = create<AppState>((set, get) => ({
     }),
   compareRequest: null,
   setCompareRequest: (pairs) => set({ compareRequest: pairs }),
+  moveRequest: null,
+  setMoveRequest: (oldIds) => set({ moveRequest: oldIds }),
+  moveToNewVersions: (moves, opts) => {
+    const s = get()
+    let content = { items: s.items, takeoffs: s.takeoffs, markups: s.markups, scaleRegions: s.scaleRegions }
+    const total = { takeoffs: 0, markups: 0 }
+    for (const m of moves) {
+      const r = moveToVersion(content, m.oldId, m.newId, m.t, { markups: opts.markups, newId: () => `r${Date.now().toString(36)}${Math.random().toString(36).slice(2, 7)}` })
+      content = { items: r.items, takeoffs: r.takeoffs, markups: r.markups, scaleRegions: r.scaleRegions }
+      total.takeoffs += r.moved.takeoffs
+      total.markups += r.moved.markups
+    }
+    const scales = { ...s.scales }
+    for (const m of moves) if (opts.copyScale.includes(m.newId) && s.scales[m.oldId]) scales[m.newId] = { ...s.scales[m.oldId]! }
+    const movedIds = new Set(moves.map((m) => m.oldId))
+    set({
+      ...record(s),
+      ...content,
+      scales,
+      selectedTakeoffId: null,
+      selectedMarkupId: null,
+      selectedSheetId: s.selectedSheetId && movedIds.has(s.selectedSheetId) ? moves.find((m) => m.oldId === s.selectedSheetId)!.newId : s.selectedSheetId,
+    })
+    return total
+  },
   activeItemId: null,
   selectedTakeoffId: null,
   cutoutFor: null,

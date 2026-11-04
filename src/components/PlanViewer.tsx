@@ -1300,6 +1300,8 @@ function ViewControls() {
 function OldVersionBanner({ sheetId }: { sheetId: string }) {
   const supersedes = useApp((s) => s.supersedes)
   const selectSheet = useApp((s) => s.selectSheet)
+  const hasContent = useApp((s) => s.takeoffs.some((t) => t.sheetId === sheetId) || s.markups.some((m) => m.sheetId === sheetId))
+  const requestMove = useApp((s) => s.setMoveRequest)
   if (!isSuperseded(sheetId, supersedes)) return null
   const latest = latestVersion(sheetId, supersedes)
   return (
@@ -1308,12 +1310,17 @@ function OldVersionBanner({ sheetId }: { sheetId: string }) {
       onPointerDown={(e) => e.stopPropagation()}
       data-testid="old-version-banner"
     >
-      <span>
-        <span className="font-semibold">Old version (v{versionNumber(sheetId, supersedes)})</span> · there’s a newer version of this sheet (v{versionNumber(latest, supersedes)}).
+      <span className="whitespace-nowrap">
+        <span className="font-semibold">Old version (v{versionNumber(sheetId, supersedes)})</span> · newer version: v{versionNumber(latest, supersedes)}
       </span>
-      <button onClick={() => selectSheet(latest)} className="rounded bg-accent px-2 py-0.5 text-xs font-medium text-graphite hover:bg-accent-hover">
+      <button onClick={() => selectSheet(latest)} className="rounded bg-accent px-2 py-0.5 text-xs font-medium whitespace-nowrap text-graphite hover:bg-accent-hover">
         Open v{versionNumber(latest, supersedes)}
       </button>
+      {hasContent && (
+        <button onClick={() => requestMove([sheetId])} className="rounded border border-graphite px-2 py-0.5 text-xs font-medium whitespace-nowrap hover:bg-white/40" data-testid="move-takeoffs">
+          Move takeoffs to v{versionNumber(latest, supersedes)}
+        </button>
+      )}
     </div>
   )
 }

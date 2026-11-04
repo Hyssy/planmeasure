@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { bestAlignment, compareSheets, dilate, pairSheets, type Grey } from './compare'
+import { bestAlignment, compareSheets, dilate, pairSheets, refineSubpixel, type Grey } from './compare'
 
 function blank(w = 300, h = 200): Grey {
   return { width: w, height: h, data: new Uint8Array(w * h).fill(255) }
@@ -63,5 +63,29 @@ describe('pairing sheets between revisions', () => {
     expect(pairSheets(['A-101', 'A-102', 'A-201'], ['A-201', 'A-101', 'A-102'])).toEqual([1, 2, 0])
     expect(pairSheets(['a-101', undefined], ['A-101', 'X'])).toEqual([0, 1])
     expect(pairSheets(['A-101', 'A-999'], ['A-101'])).toEqual([0, -1])
+  })
+})
+
+describe('refineSubpixel', () => {
+  // soft vertical and horizontal lines (2 px wide blur) centred at fractional positions
+  const draw = (w: number, h: number, ox: number, oy: number): Grey => {
+    const data = new Uint8Array(w * h).fill(255)
+    for (let y = 0; y < h; y++)
+      for (let x = 0; x < w; x++) {
+        let ink = 0
+        for (const cx of [20 + ox, 47 + ox, 71 + ox]) ink = Math.max(ink, Math.max(0, 1 - Math.abs(x - cx) / 2))
+        for (const cy of [15 + oy, 52 + oy]) ink = Math.max(ink, Math.max(0, 1 - Math.abs(y - cy) / 2))
+        data[y * w + x] = Math.round(255 * (1 - ink))
+      }
+    return { width: w, height: h, data }
+  }
+  it('finds a shift of a fraction of a pixel', () => {
+    const oldG = draw(100, 80, 0, 0)
+    const newG = draw(100, 80, 2.4, -1.3)
+    const whole = bestAlignment(oldG, newG)
+    const fine = refineSubpixel(oldG, newG, whole)
+    expect(fine.dx).toBeCloseTo(2.4, 0)
+    expect(Math.abs(fine.dx - 2.4)).toBeLessThan(0.2)
+    expect(Math.abs(fine.dy + 1.3)).toBeLessThan(0.2)
   })
 })

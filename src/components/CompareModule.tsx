@@ -1,12 +1,11 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { compareSheets, pairSheets, type Comparison, type Grey } from '../lib/compare'
-import { getPageText, loadPdfBytes, newFileId, renderPage, type SheetMeta } from '../lib/pdf'
+import { compareSheets, pairSheets, type Comparison } from '../lib/compare'
+import { COMPARE_PX, renderTo, toGrey } from '../lib/compareRender'
+import { getPageText, loadPdfBytes, newFileId, type SheetMeta } from '../lib/pdf'
 import { detectSheetLabel } from '../lib/sheetLabel'
 import { isSuperseded, type VersionMatch } from '../lib/versions'
 import { sheetName, useApp } from '../store'
 
-/** Rendered size of the longer side when comparing (pixels). About 0.4 mm per pixel on an A1 sheet. */
-const COMPARE_PX = 2000
 const ADDED = [37, 99, 235] // blue
 const REMOVED = [249, 115, 22] // orange
 const SAME = [150, 150, 150]
@@ -177,30 +176,6 @@ export default function CompareModule({ onClose, versionPairs }: { onClose: () =
       </div>
     </div>
   )
-}
-
-/** Render a sheet to a canvas `width` pixels wide (height follows `heightPx` so both versions match). */
-async function renderTo(sheet: SheetMeta, width: number, heightPx: number): Promise<HTMLCanvasElement> {
-  const canvas = document.createElement('canvas')
-  canvas.width = width
-  canvas.height = heightPx
-  const ctx = canvas.getContext('2d')!
-  ctx.fillStyle = '#ffffff'
-  ctx.fillRect(0, 0, width, heightPx)
-  const s = width / sheet.widthPt
-  const tmp = document.createElement('canvas')
-  tmp.width = width
-  tmp.height = Math.round(sheet.heightPt * s)
-  await renderPage(sheet, tmp, s).promise
-  ctx.drawImage(tmp, 0, 0)
-  return canvas
-}
-
-function toGrey(c: HTMLCanvasElement): Grey {
-  const d = c.getContext('2d')!.getImageData(0, 0, c.width, c.height).data
-  const g = new Uint8Array(c.width * c.height)
-  for (let i = 0; i < g.length; i++) g[i] = (d[i * 4] * 0.3 + d[i * 4 + 1] * 0.59 + d[i * 4 + 2] * 0.11) | 0
-  return { width: c.width, height: c.height, data: g }
 }
 
 type Mode = 'slider' | 'flicker' | 'overlay'

@@ -228,3 +228,38 @@ export function pairSheets(base: (string | undefined)[], other: (string | undefi
   const left = other.map((_, k) => k).filter((k) => !used.has(k))
   return out.map((j) => (j >= 0 ? j : (left.shift() ?? -1)))
 }
+
+/**
+ * Refine a whole-pixel alignment to a fraction of a pixel: how well the inks
+ * overlap is measured one pixel either side, and a parabola through the three
+ * scores gives the peak. Used when moving takeoffs, where position matters.
+ */
+export function refineSubpixel(oldG: Grey, newG: Grey, at: { dx: number; dy: number }): { dx: number; dy: number } {
+  const { width: w, height: h } = newG
+  // soft ink (darkness 0..1) gives a smoother peak than on/off ink
+  const dark = (g: Grey) => {
+    const out = new Float32Array(g.width * g.height)
+    for (let i = 0; i < out.length; i++) out[i] = (255 - g.data[i]) / 255
+    return out
+  }
+  const a = dark(oldG)
+  const b = dark(newG)
+  const score = (dx: number, dy: number) => {
+    let s = 0
+    for (let y = Math.max(0, dy); y < Math.min(h, h + dy); y++) {
+      const row = y * w
+      const orow = (y - dy) * w - dx
+      for (let x = Math.max(0, dx); x < Math.min(w, w + dx); x++) s += b[row + x] * a[orow + x]
+    }
+    return s
+  }
+  const peak = (m: number, c: number, p: number) => {
+    const d = m - 2 * c + p
+    return d < 0 ? Math.max(-0.5, Math.min(0.5, (0.5 * (m - p)) / d)) : 0
+  }
+  const c = score(at.dx, at.dy)
+  return {
+    dx: at.dx + peak(score(at.dx - 1, at.dy), c, score(at.dx + 1, at.dy)),
+    dy: at.dy + peak(score(at.dx, at.dy - 1), c, score(at.dx, at.dy + 1)),
+  }
+}

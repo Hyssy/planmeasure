@@ -1,4 +1,5 @@
 import { useMemo, useState } from 'react'
+import { useShallow } from 'zustand/react/shallow'
 import { usePanels } from '../panels'
 import CollapsedRail, { CollapseButton } from './CollapsedRail'
 import type { SheetMeta } from '../lib/pdf'
@@ -180,19 +181,31 @@ function OlderVersions({ sheet, older }: { sheet: SheetMeta; older: SheetMeta[] 
   const thumbnails = useApp((s) => s.thumbnails)
   const unmark = useApp((s) => s.unmarkVersion)
   const compare = useApp((s) => s.setCompareRequest)
+  const requestMove = useApp((s) => s.setMoveRequest)
+  const withContent = useApp(useShallow((s) => older.filter((o) => s.takeoffs.some((t) => t.sheetId === o.id) || s.markups.some((m) => m.sheetId === o.id)).map((o) => o.id)))
   const previous = older[0]
   const showing = open || older.some((o) => o.id === selectedSheetId)
   return (
     <div className="mt-1.5 border-t border-neutral-200 pt-1.5">
-      <div className="flex items-center gap-1">
+      <div className="flex flex-wrap items-center gap-1">
         <button
           onClick={() => compare([{ newId: sheet.id, oldId: previous.id }])}
-          className="rounded border border-neutral-300 px-1.5 py-0.5 text-xs font-medium hover:bg-neutral-100"
+          className="rounded border border-neutral-300 px-1.5 py-0.5 text-xs font-medium whitespace-nowrap hover:bg-neutral-100"
           data-testid="compare-previous"
         >
           Compare with v{versionNumber(previous.id, supersedes)}
         </button>
-        <button onClick={() => setOpen(!showing)} className="ml-auto rounded px-1 py-0.5 text-xs text-neutral-600 hover:bg-neutral-100" aria-expanded={showing} data-testid="older-toggle">
+        {withContent.length > 0 && (
+          <button
+            onClick={() => requestMove(withContent)}
+            className="rounded border border-neutral-300 px-1.5 py-0.5 text-xs font-medium whitespace-nowrap hover:bg-neutral-100"
+            title="Move the takeoffs drawn on the earlier version onto this one"
+            data-testid="move-from-older"
+          >
+            Move takeoffs here
+          </button>
+        )}
+        <button onClick={() => setOpen(!showing)} className="ml-auto rounded px-1 py-0.5 text-xs whitespace-nowrap text-neutral-600 hover:bg-neutral-100" aria-expanded={showing} data-testid="older-toggle">
           {showing ? '˄' : '˅'} {older.length} earlier
         </button>
       </div>
