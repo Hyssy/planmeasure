@@ -74,6 +74,14 @@ A browser-based PDF takeoff and markup tool for construction plans (architectura
 - Layers: Takeoff and Markup can be shown or hidden separately.
 - Export a flattened marked-up PDF with pdf-lib (built with Phase 6). Options: **This page / Marked-up pages only / Whole document** (decided by Jordan). The export shows the visible layers — markups and/or takeoff shapes, optionally with item names and quantities; a "marked-up page" is any page with something drawn on it. Pages from several PDFs combine into one file; original drawings are copied unchanged (vector), shapes are drawn into the page.
 
+## Compare revisions
+- (Added by Jordan, on branch `takeoff-improvements`; an advanced feature switched on in Settings → "Compare revisions", which adds **Compare** to the header.) The user says whether this project is the new or old version, then opens the other version's PDF(s) — opened only for comparing, never added to the project or uploaded.
+- Sheets pair up by sheet number (then page order), with dropdowns to fix any pairing.
+- Each pair is rendered to the same size (2000 px on the long side), lined up automatically if one version sits slightly differently on its page, and compared ink-for-ink with a 1 px tolerance. Changed ink is grouped into numbered boxes: **blue = added** in the new version, **orange = removed** from the old one.
+- Views: **Slider** (drag between old and new) and **Overlay** (unchanged grey, added blue, removed orange); "Highlight changes" boxes on either; click a change in the list to zoom to it; wheel zoom and drag pan.
+- **Add changes as clouds** puts a red revision cloud round each change on this project's sheet (normal markups, undoable).
+- Test files: `scripts/make-revision-test-plans.py` → `test-plans/revision-A.pdf` / `revision-B.pdf` (expected: A-101 four changes, A-102 one).
+
 ## UI layout
 - Left: sheet list (thumbnails + labels + scale status).
 - Centre: plan viewer with smooth zoom and pan (mouse wheel and trackpad).
@@ -91,7 +99,7 @@ A browser-based PDF takeoff and markup tool for construction plans (architectura
 6. **Markup**: markup tools + markup layer, takeoff drawing styles, and the marked-up PDF export.
 7. **Exports**: CSV/Excel quantities.
 8. **Deploy**: Cloudflare Pages from the GitHub repo.
-9. **Nice-to-haves**: compare two revisions, print-ready quantity report, whole-page OCR. (Title-block OCR for flattened sets was done after Phase 3.)
+9. **Nice-to-haves**: print-ready quantity report, whole-page OCR. (Title-block OCR for flattened sets was done after Phase 3; compare revisions was built on `takeoff-improvements`.)
 
 ## Branding (done — Cyclo design system)
 - Branded to the **Cyclo design system** on claude.ai: https://claude.ai/artifact/G2hkn8FLdfLgG4M7tJ1n7s (read its `project/README.md` and `project/tokens.json`). Keep new UI consistent with it.

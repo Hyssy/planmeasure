@@ -95,6 +95,13 @@ export default function SettingsDialog({ onClose }: { onClose: () => void }) {
             <span className="block text-xs text-neutral-500">Adds “+ Scale area” to the scale bar: box a detail drawn at another scale and give it its own scale.</span>
           </span>
         </label>
+        <label className="mt-2 flex items-start gap-2">
+          <input type="checkbox" className="mt-0.5" checked={advanced.compare} onChange={(e) => setAdvanced({ compare: e.target.checked })} data-testid="adv-compare" />
+          <span>
+            Compare revisions
+            <span className="block text-xs text-neutral-500">Adds “Compare” to the header: open another version of the plans and see what changed, with a before/after slider and changes highlighted.</span>
+          </span>
+        </label>
 
         <div className="mt-4 flex justify-end">
           <button onClick={onClose} className="rounded bg-accent px-3 py-1.5 font-medium text-graphite hover:bg-accent-hover">
