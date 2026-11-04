@@ -1,5 +1,6 @@
 import { useState } from 'react'
-import { COMMON_RATIOS, describeCandidate } from '../lib/scale'
+import { describeCandidate } from '../lib/scale'
+import RatioInput from './RatioInput'
 import { paperSizeFromPt } from '../lib/units'
 import type { SheetMeta } from '../lib/pdf'
 import { usePanels } from '../panels'
@@ -163,27 +164,10 @@ export default function ScaleBar({ sheet }: { sheet: SheetMeta }) {
 }
 
 function ScalePicker(props: { onDone: (ratio: number) => void; onCancel: () => void }) {
-  const [ratio, setRatio] = useState(100)
   return (
-    <div className="flex flex-wrap items-center gap-2 border-t border-neutral-200 bg-neutral-50 px-3 py-2 text-sm">
-      <label className="flex items-center gap-1">
-        Scale 1:
-        <select
-          className="rounded border border-neutral-300 bg-white px-1.5 py-1"
-          value={ratio}
-          onChange={(e) => setRatio(Number(e.target.value))}
-        >
-          {COMMON_RATIOS.map((r) => (
-            <option key={r} value={r}>
-              {r}
-            </option>
-          ))}
-        </select>
-      </label>
+    <div className="flex flex-wrap items-center gap-2 border-t border-neutral-200 bg-neutral-50 px-3 py-2 text-sm" data-testid="scale-picker">
+      <RatioInput onApply={props.onDone} onCancel={props.onCancel} testId="scale-ratio" applyTestId="scale-apply" />
       <span className="text-neutral-500">as printed on this page</span>
-      <BarButton primary onClick={() => props.onDone(ratio)}>
-        Apply
-      </BarButton>
       <BarButton onClick={props.onCancel}>Cancel</BarButton>
     </div>
   )

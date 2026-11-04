@@ -1,6 +1,5 @@
-import { useState } from 'react'
 import { Group, Label, Rect, Tag, Text } from 'react-konva'
-import { COMMON_RATIOS } from '../lib/scale'
+import RatioInput from './RatioInput'
 import type { ScaleRegion } from '../lib/scaleRegions'
 
 const COLOUR = '#0f766e' // teal: different from markup and takeoff colours
@@ -40,7 +39,6 @@ export default function RegionBoxes({ regions, draft, scale: s }: { regions: Sca
 
 /** After drawing a scale area's box: pick its scale, or calibrate inside it. */
 export function RegionScaleDialog(props: { onRatio: (ratio: number) => void; onCalibrate: () => void; onCancel: () => void }) {
-  const [ratio, setRatio] = useState(20)
   return (
     <div className="absolute inset-0 z-20 flex items-center justify-center bg-black/30" onPointerDown={(e) => e.stopPropagation()}>
       <div
@@ -51,21 +49,9 @@ export function RegionScaleDialog(props: { onRatio: (ratio: number) => void; onC
       >
         <h2 className="font-semibold">Scale for this area</h2>
         <p className="mt-1 text-neutral-600">Shapes drawn inside the box use this scale. Everything else on the sheet keeps the sheet’s scale.</p>
-        <div className="mt-3 flex items-center gap-2">
-          <label className="flex items-center gap-1">
-            Scale 1:
-            <select autoFocus value={ratio} onChange={(e) => setRatio(Number(e.target.value))} className="rounded border border-neutral-300 bg-white px-1.5 py-1" data-testid="region-ratio">
-              {COMMON_RATIOS.map((r) => (
-                <option key={r} value={r}>
-                  {r}
-                </option>
-              ))}
-            </select>
-          </label>
-          <span className="text-xs text-neutral-500">as printed on this page</span>
-          <button onClick={() => props.onRatio(ratio)} className="ml-auto rounded bg-accent px-3 py-1.5 font-medium text-graphite hover:bg-accent-hover" data-testid="region-apply">
-            Apply
-          </button>
+        <div className="mt-3">
+          <RatioInput onApply={props.onRatio} onCancel={props.onCancel} testId="region-ratio" applyTestId="region-apply" applyClass="rounded bg-accent px-3 py-1.5 font-medium text-graphite hover:bg-accent-hover disabled:opacity-40" />
+          <span className="mt-1 block text-xs text-neutral-500">As printed on this page.</span>
         </div>
         <div className="mt-3 flex items-center justify-between border-t border-neutral-200 pt-3">
           <button onClick={props.onCalibrate} className="rounded border border-neutral-300 px-3 py-1.5 font-medium hover:bg-neutral-100" data-testid="region-calibrate">

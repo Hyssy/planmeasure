@@ -80,6 +80,17 @@ export function formatRatio(ratio: number): string {
   return `1:${rounded}`
 }
 
+/**
+ * Read a scale the user typed: "150", "1:150", "1 : 150" or "1/150" → 150.
+ * Whole numbers or one decimal place; null if it isn't a sensible scale.
+ */
+export function parseRatioInput(text: string): number | null {
+  const m = text.trim().replace(/,/g, '').match(/^(?:1\s*[:/]\s*)?(\d+(?:\.\d)?)$/)
+  if (!m) return null
+  const r = Number(m[1])
+  return r >= 1 && r <= 100000 ? r : null
+}
+
 // ---------------------------------------------------------------------------
 // Scale detection from the page's text
 // ---------------------------------------------------------------------------

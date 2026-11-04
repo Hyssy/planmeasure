@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import {
+  parseRatioInput,
   COMMON_RATIOS,
   distancePt,
   distinctScales,
@@ -136,5 +137,19 @@ describe('1:150', () => {
   it('measures correctly: 100 mm on paper is 15 m', () => {
     expect(mmPerPtFromRatio(150)).toBeCloseTo(0.352778 * 150, 4)
     expect(realMm(mmToPt(100), mmPerPtFromRatio(150))).toBeCloseTo(15000, 6)
+  })
+})
+
+describe('typed scales', () => {
+  it('reads the ways people type a scale', () => {
+    expect(parseRatioInput('150')).toBe(150)
+    expect(parseRatioInput('1:150')).toBe(150)
+    expect(parseRatioInput(' 1 : 150 ')).toBe(150)
+    expect(parseRatioInput('1/150')).toBe(150)
+    expect(parseRatioInput('1:1,000')).toBe(1000)
+    expect(parseRatioInput('33.3')).toBe(33.3)
+  })
+  it('refuses things that aren’t a scale', () => {
+    for (const bad of ['', 'abc', '0', '1:0', '2:100', '-50', '1:1.234', '150mm']) expect(parseRatioInput(bad)).toBeNull()
   })
 })
