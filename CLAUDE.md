@@ -41,6 +41,7 @@ A browser-based PDF takeoff and markup tool for construction plans (architectura
 - **Scale detection** reads the text layer for patterns like `1:100`, `SCALE 1:50`, `1:100 @ A1`, `1:200 @ A3`.
   - If the scale says `@ A1` but the PDF page is A3 (the sheet has been resized), **don't adjust or guess**: show no suggested scale, flag "Sheet has been resized", and prompt the user to calibrate from a dimension line on the plan. (Decided by Jordan.) Manually picked scales always mean "as printed on this page".
   - If multiple scales appear on one sheet (several viewports), flag it and let the user choose, or set a scale per region.
+  - **Scale areas** (built, on branch `takeoff-improvements`; an advanced feature switched on in Settings → "Different scales on one page"): the user boxes part of a sheet ("+ Scale area" in the scale bar) and gives it a ratio or calibrates inside it. Shapes inside a box use its scale (the smallest box wins where boxes overlap); everything else uses the sheet's. **A shape crossing a box edge is refused** with an explanation (decided by Jordan); an existing shape that ends up crossing a box has no scale and is left out of totals. Calibrating inside an existing box recalibrates that box. Scale areas are saved with the project.
   - Detected scale is a **suggestion**. Show it clearly as "Detected — please verify".
 - **Calibrate tool**: user clicks two points on a known dimension and types the real length. This always overrides detection.
 - Show a warning badge on any sheet with no confirmed scale.

@@ -7,10 +7,12 @@ interface Props {
   distPt: number
   onApply: (realMmPerPt: number) => void
   onCancel: () => void
+  /** what the calibration sets, e.g. "this sheet" or "the scale area (1:20)" */
+  target?: string
 }
 
 /** Asks for the real length of the line just drawn with the Calibrate tool. */
-export default function CalibrateDialog({ distPt, onApply, onCancel }: Props) {
+export default function CalibrateDialog({ distPt, onApply, onCancel, target }: Props) {
   const [value, setValue] = useState('')
   const [unit, setUnit] = useState<'mm' | 'm'>('mm')
 
@@ -36,6 +38,7 @@ export default function CalibrateDialog({ distPt, onApply, onCancel }: Props) {
         className="w-80 cursor-default rounded-lg bg-white p-4 border border-neutral-300"
       >
         <h2 className="font-semibold">Calibrate scale</h2>
+        {target && target !== 'this sheet' && <p className="text-xs text-accent-text" data-testid="calibrate-target">Sets the scale for {target}.</p>}
         <p className="mt-1 text-sm text-neutral-600">
           What is the real length of the line you drew? It measures{' '}
           {ptToMm(distPt).toFixed(1)} mm on paper.

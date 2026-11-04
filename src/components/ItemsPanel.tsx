@@ -20,7 +20,7 @@ import {
   type Takeoff,
   type TakeoffKind,
 } from '../lib/takeoff'
-import { scaleInfo, sheetName, TAKEOFF_TOOLS, useApp } from '../store'
+import { sheetName, TAKEOFF_TOOLS, takeoffScales, useApp } from '../store'
 
 type Scope = 'sheet' | 'project'
 
@@ -40,11 +40,9 @@ export default function ItemsPanel() {
   const [scope, setScope] = useState<Scope>('project')
   const [adding, setAdding] = useState(false)
 
-  const scaleInfos = useMemo(() => {
-    const out: Record<string, SheetScaleInfo | undefined> = {}
-    for (const [id, sc] of Object.entries(scales)) out[id] = scaleInfo(sc)
-    return out
-  }, [scales])
+  const scaleRegions = useApp((s) => s.scaleRegions)
+  // each shape's scale: its scale area, else its sheet's (shapes crossing an area's edge have none)
+  const scaleInfos = useMemo(() => takeoffScales({ scales, scaleRegions }), [scales, scaleRegions])
 
   const inScope = scope === 'sheet' ? takeoffs.filter((t) => t.sheetId === selectedSheetId) : takeoffs
   const sheetLabel = (id: string) => {
@@ -182,7 +180,7 @@ function ItemRow(props: {
         <div className="mt-1 space-y-0.5 text-xs" data-testid="item-warnings">
           {total.unscaled > 0 && (
             <div className="text-red-700">
-              {total.unscaled} shape{total.unscaled > 1 ? 's' : ''} on unscaled sheets not counted
+              {total.unscaled} shape{total.unscaled > 1 ? 's' : ''} without a scale not counted
             </div>
           )}
           {total.unverified > 0 && (
@@ -385,7 +383,7 @@ function Swatch({ c, value, onChange }: { c: string; value: string; onChange: (c
 }
 
 /** Details of the selected shape, with actions. */
-function SelectedShape({ scaleInfos }: { scaleInfos: Record<string, SheetScaleInfo | undefined> }) {
+function SelectedShape({ scaleInfos }: { scaleInfos: (t: Takeoff) => SheetScaleInfo | undefined }) {
   const selectedId = useApp((s) => s.selectedTakeoffId)
   const takeoff = useApp((s) => s.takeoffs.find((t) => t.id === selectedId))
   const items = useApp((s) => s.items)
@@ -398,7 +396,7 @@ function SelectedShape({ scaleInfos }: { scaleInfos: Record<string, SheetScaleIn
   if (!takeoff) return null
   const item = items.find((i) => i.id === takeoff.itemId)
   if (!item) return null
-  const q = takeoffQuantity(takeoff, item.kind, scaleInfos[takeoff.sheetId])
+  const q = takeoffQuantity(takeoff, item.kind, scaleInfos(takeoff))
   return (
     <div className="border-t border-neutral-300 bg-neutral-50 p-3 text-sm" data-testid="selected-shape">
       <div className="section-label">Selected shape</div>
@@ -412,7 +410,7 @@ function SelectedShape({ scaleInfos }: { scaleInfos: Record<string, SheetScaleIn
       {item.kind === 'area' && (
         <AreaBreakdown
           takeoff={takeoff}
-          scale={scaleInfos[takeoff.sheetId]}
+          scale={scaleInfos(takeoff)}
           drawing={cutoutFor === takeoff.id}
           onAdd={() => startCutout(takeoff.id)}
           onRemove={(i) => removeCutout(takeoff.id, i)}
@@ -597,7 +595,7 @@ function GroupRow(props: {
       </ul>
       {(totals.unscaled > 0 || totals.unverified > 0) && (
         <div className="mt-1 space-y-0.5 text-xs" data-testid="item-warnings">
-          {totals.unscaled > 0 && <div className="text-red-700">{totals.unscaled} shape{totals.unscaled > 1 ? 's' : ''} on unscaled sheets not counted</div>}
+          {totals.unscaled > 0 && <div className="text-red-700">{totals.unscaled} shape{totals.unscaled > 1 ? 's' : ''} without a scale not counted</div>}
           {totals.unverified > 0 && <div className="text-accent-text">includes {totals.unverified} shape{totals.unverified > 1 ? 's' : ''} on an unverified scale</div>}
         </div>
       )}

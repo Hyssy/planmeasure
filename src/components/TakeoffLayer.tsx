@@ -26,7 +26,7 @@ interface Props {
   selectedLabel?: string
   draft: TakeoffDraft | null
   /** segment dimensions: how they look (null = off), which shapes show them, and the sheet's scale */
-  dims?: { look: DimensionLook | null; show: 'selected' | 'all' | 'off'; realMmPerPt: number | null }
+  dims?: { look: DimensionLook | null; show: 'selected' | 'all' | 'off'; mmPerPtFor: (pts: Point[]) => number | null }
 }
 
 const MARKER_RADIUS = 7
@@ -40,7 +40,7 @@ export default function TakeoffLayer({ scale: s, takeoffs, items, selectedId, se
   const look = dims?.show !== 'off' ? (dims?.look ?? null) : null
   // only label segments long enough to read on screen (≈40 px), so freehand shapes don't fill with figures
   const dimPrims = (points: Point[], closed: boolean, flip = false) =>
-    look ? shapeDimensions(points, closed, dims!.realMmPerPt, look, flip, measureScreenText, 40 / s) : []
+    look ? shapeDimensions(points, closed, dims!.mmPerPtFor(points), look, flip, measureScreenText, 40 / s) : []
   return (
     <>
       {takeoffs.map((t) => {

@@ -6,6 +6,8 @@ export default function SettingsDialog({ onClose }: { onClose: () => void }) {
   const setDims = usePanels((s) => s.setDims)
   const snap = usePanels((s) => s.snap)
   const setSnap = usePanels((s) => s.setSnap)
+  const advanced = usePanels((s) => s.advanced)
+  const setAdvanced = usePanels((s) => s.setAdvanced)
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/30" onMouseDown={(e) => e.target === e.currentTarget && onClose()}>
@@ -83,6 +85,16 @@ export default function SettingsDialog({ onClose }: { onClose: () => void }) {
           Snap to the drawing’s line ends, corners, midpoints and intersections
         </label>
         <p className="mt-0.5 text-xs text-neutral-500">Shortcut S. Hold Alt to draw freely. On flattened plans snapping is approximate.</p>
+
+        <h3 className="section-label mt-4">Advanced features</h3>
+        <p className="mt-0.5 text-xs text-neutral-500">Switch these on when you need them.</p>
+        <label className="mt-1 flex items-start gap-2">
+          <input type="checkbox" className="mt-0.5" checked={advanced.scaleAreas} onChange={(e) => setAdvanced({ scaleAreas: e.target.checked })} data-testid="adv-scale-areas" />
+          <span>
+            Different scales on one page
+            <span className="block text-xs text-neutral-500">Adds “+ Scale area” to the scale bar: box a detail drawn at another scale and give it its own scale.</span>
+          </span>
+        </label>
 
         <div className="mt-4 flex justify-end">
           <button onClick={onClose} className="rounded bg-accent px-3 py-1.5 font-medium text-graphite hover:bg-accent-hover">

@@ -15,6 +15,15 @@ export interface DimensionPrefs {
 }
 export const DEFAULT_DIMS: DimensionPrefs = { style: 'offset', show: 'selected', units: 'm', size: 'normal' }
 
+/** Advanced features, switched on in Settings when needed. */
+export interface AdvancedPrefs {
+  /** parts of a sheet at a different scale */
+  scaleAreas: boolean
+  /** compare two revisions of a plan set */
+  compare: boolean
+}
+const DEFAULT_ADVANCED: AdvancedPrefs = { scaleAreas: false, compare: false }
+
 export interface PanelState {
   sheets: boolean
   items: boolean
@@ -25,17 +34,17 @@ type PanelName = keyof PanelState
 const KEY = 'planmeasure.panels'
 const ALL_OPEN: PanelState = { sheets: true, items: true, scaleBar: true }
 
-function load(): { open: PanelState; beforeFocus: PanelState | null; snap: boolean; dims: DimensionPrefs } {
+function load(): { open: PanelState; beforeFocus: PanelState | null; snap: boolean; dims: DimensionPrefs; advanced: AdvancedPrefs } {
   try {
     const raw = localStorage.getItem(KEY)
     if (raw) {
       const p = JSON.parse(raw)
-      return { open: { ...ALL_OPEN, ...p.open }, beforeFocus: p.beforeFocus ?? null, snap: p.snap ?? true, dims: { ...DEFAULT_DIMS, ...p.dims } }
+      return { open: { ...ALL_OPEN, ...p.open }, beforeFocus: p.beforeFocus ?? null, snap: p.snap ?? true, dims: { ...DEFAULT_DIMS, ...p.dims }, advanced: { ...DEFAULT_ADVANCED, ...p.advanced } }
     }
   } catch {
     // storage unavailable (private window etc.) — just use the defaults
   }
-  return { open: ALL_OPEN, beforeFocus: null, snap: true, dims: DEFAULT_DIMS }
+  return { open: ALL_OPEN, beforeFocus: null, snap: true, dims: DEFAULT_DIMS, advanced: DEFAULT_ADVANCED }
 }
 
 interface Panels {
@@ -50,12 +59,15 @@ interface Panels {
   setSnap: (on: boolean) => void
   dims: DimensionPrefs
   setDims: (patch: Partial<DimensionPrefs>) => void
+  advanced: AdvancedPrefs
+  setAdvanced: (patch: Partial<AdvancedPrefs>) => void
 }
 
 export const usePanels = create<Panels>((set, get) => ({
   ...load(),
   setSnap: (on) => set({ snap: on }),
   setDims: (patch) => set((s) => ({ dims: { ...s.dims, ...patch } })),
+  setAdvanced: (patch) => set((s) => ({ advanced: { ...s.advanced, ...patch } })),
   setPanel: (name, open) => set((s) => ({ open: { ...s.open, [name]: open }, beforeFocus: null })),
   toggleFocus: () => {
     const { open, beforeFocus } = get()
@@ -67,7 +79,7 @@ export const usePanels = create<Panels>((set, get) => ({
 
 usePanels.subscribe((s) => {
   try {
-    localStorage.setItem(KEY, JSON.stringify({ open: s.open, beforeFocus: s.beforeFocus, snap: s.snap, dims: s.dims }))
+    localStorage.setItem(KEY, JSON.stringify({ open: s.open, beforeFocus: s.beforeFocus, snap: s.snap, dims: s.dims, advanced: s.advanced }))
   } catch {
     // ignore — it's only a convenience
   }

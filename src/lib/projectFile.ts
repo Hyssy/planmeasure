@@ -40,6 +40,8 @@ export interface ProjectData {
   labelAreas?: Record<string, { x0: number; y0: number; x1: number; y1: number }>
   /** project settings (added later — older files have none) */
   settings?: { itemsPerSheet?: boolean }
+  /** scale areas: parts of sheets at a different scale (added later — older files have none) */
+  scaleRegions?: unknown[]
   selectedSheetId: string | null
 }
 

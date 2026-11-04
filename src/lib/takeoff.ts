@@ -88,7 +88,7 @@ export function groupItems(items: Item[]): ItemGroup[] {
 }
 
 /** Combined totals for a group: its items added together. */
-export function groupTotal(group: ItemGroup, takeoffs: Takeoff[], scales: Record<string, SheetScaleInfo | undefined>) {
+export function groupTotal(group: ItemGroup, takeoffs: Takeoff[], scales: ScaleLookup) {
   const parts = group.items.map((item) => ({ item, total: itemTotal(item, takeoffs, scales) }))
   return {
     parts,
@@ -117,6 +117,12 @@ export interface SheetScaleInfo {
   realMmPerPt: number
   state: ScaleState
 }
+
+/**
+ * The scale each shape is measured at: by sheet, or a function for when parts of
+ * a sheet have their own scale (scale areas). `undefined` = no usable scale.
+ */
+export type ScaleLookup = Record<string, SheetScaleInfo | undefined> | ((t: Takeoff) => SheetScaleInfo | undefined)
 
 export interface Quantity {
   /** in the item's unit (m, m², each); null when the sheet has no scale */
@@ -171,7 +177,7 @@ export interface ItemTotal {
 export function itemTotal(
   item: Item,
   takeoffs: Takeoff[],
-  scales: Record<string, SheetScaleInfo | undefined>,
+  scales: ScaleLookup,
 ): ItemTotal {
   const result: ItemTotal = { total: 0, unscaled: 0, unverified: 0, bySheet: [] }
   const sheets = new Map<string, ItemTotal['bySheet'][number]>()
@@ -183,7 +189,7 @@ export function itemTotal(
       sheets.set(t.sheetId, row)
       result.bySheet.push(row)
     }
-    const q = takeoffQuantity(t, item.kind, scales[t.sheetId])
+    const q = takeoffQuantity(t, item.kind, typeof scales === 'function' ? scales(t) : scales[t.sheetId])
     if (q.value === null) {
       row.unscaled++
       result.unscaled++

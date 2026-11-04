@@ -8,6 +8,10 @@ import { useApp } from '../store'
 /** Shows and sets the current sheet's scale, above the plan. */
 export default function ScaleBar({ sheet }: { sheet: SheetMeta }) {
   const setPanel = usePanels((s) => s.setPanel)
+  const scaleAreasOn = usePanels((s) => s.advanced.scaleAreas)
+  const allRegions = useApp((s) => s.scaleRegions)
+  const regions = allRegions.filter((r) => r.sheetId === sheet.id)
+  const deleteScaleRegion = useApp((s) => s.deleteScaleRegion)
   const scale = useApp((s) => s.scales[sheet.id])
   const detection = useApp((s) => s.detections[sheet.id])
   const setTool = useApp((s) => s.setTool)
@@ -119,6 +123,31 @@ export default function ScaleBar({ sheet }: { sheet: SheetMeta }) {
         >
           ˄
         </button>
+        {(scaleAreasOn || regions.length > 0) && (
+          <div className="flex w-full flex-wrap items-center gap-1.5 border-t border-neutral-100 pt-1.5 text-xs" data-testid="scale-areas">
+            <span className="text-neutral-600">Scale areas:</span>
+            {regions.length === 0 && <span className="text-neutral-500">none on this sheet</span>}
+            {regions.map((r) => (
+              <span key={r.id} className="flex items-center gap-1 rounded bg-steel-blue-4 px-1.5 py-0.5 text-graphite">
+                {r.label}
+                <button
+                  onClick={() => {
+                    if (confirm(`Remove the ${r.label} scale area? Shapes inside it will go back to the sheet’s scale.`)) deleteScaleRegion(r.id)
+                  }}
+                  className="text-neutral-500 hover:text-red-700"
+                  aria-label={`Remove scale area ${r.label}`}
+                >
+                  ×
+                </button>
+              </span>
+            ))}
+            {scaleAreasOn && (
+              <button onClick={() => setTool('region')} className="rounded border border-neutral-300 bg-white px-2 py-0.5 font-medium hover:bg-neutral-100" data-testid="add-scale-area">
+                + Scale area
+              </button>
+            )}
+          </div>
+        )}
       </div>
       {picking && (
         <ScalePicker

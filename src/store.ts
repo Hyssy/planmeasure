@@ -1,6 +1,7 @@
 import { create } from 'zustand'
 import { areaInPoints, readNumber, readScales, readTitle, textInArea, type LabelAreas, type LabelField, type AreaRect } from './lib/labelAreas'
 import { needsOcr, ocrArea, ocrSheetText } from './lib/ocr'
+import { regionFor, type ScaleRegion } from './lib/scaleRegions'
 import * as db from './lib/db'
 import { closeAllDocuments, getPageText, loadPdfBytes, newFileId, renderThumbnail, type PageText, type SheetMeta } from './lib/pdf'
 import {
@@ -26,9 +27,10 @@ import {
 import { detectSheetLabel } from './lib/sheetLabel'
 import { MARKUP_COLOURS, type Markup, type MarkupType } from './lib/markup'
 import { groupOf, ITEM_COLOURS, itemForSheet, KIND_LABEL, type Item, type SheetScaleInfo, type Takeoff, type TakeoffKind } from './lib/takeoff'
+import type { Point } from './lib/scale'
 
 
-export type Tool = 'select' | 'pan' | 'calibrate' | 'measure' | 'markup' | 'areas' | TakeoffKind
+export type Tool = 'select' | 'pan' | 'calibrate' | 'measure' | 'markup' | 'areas' | 'region' | TakeoffKind
 
 export const TAKEOFF_TOOLS: TakeoffKind[] = ['linear', 'area', 'perimeter', 'count']
 
@@ -207,10 +209,42 @@ interface AppState {
   /** Read the taught areas on these sheets (default: all) and update their labels and scales. */
   applyLabelAreas: (sheetIds?: string[]) => Promise<number>
 
+  // ---- Scale areas (parts of a sheet at a different scale) ----
+  scaleRegions: ScaleRegion[]
+  /** while calibrating a new scale area: its box (page points) */
+  pendingRegion: { sheetId: string; x0: number; y0: number; x1: number; y1: number } | null
+  setPendingRegion: (r: AppState['pendingRegion']) => void
+  addScaleRegion: (r: Omit<ScaleRegion, 'id'>) => string
+  updateScaleRegion: (id: string, patch: Partial<Pick<ScaleRegion, 'realMmPerPt' | 'label'>>) => void
+  deleteScaleRegion: (id: string) => void
+
   // ---- Layers ----
   showTakeoffs: boolean
   showMarkups: boolean
   setLayerVisible: (layer: 'takeoffs' | 'markups', visible: boolean) => void
+}
+
+/**
+ * The scale for some points on a sheet: the scale area they're inside, else the
+ * sheet's own scale. 'mixed' when they straddle a scale area's edge.
+ */
+export function scaleForPoints(
+  s: Pick<AppState, 'scales' | 'scaleRegions'>,
+  sheetId: string,
+  points: Point[],
+): SheetScaleInfo | undefined | 'mixed' {
+  const r = regionFor(points, s.scaleRegions.filter((x) => x.sheetId === sheetId))
+  if (r === 'mixed') return 'mixed'
+  if (r) return { realMmPerPt: r.realMmPerPt, state: 'confirmed' }
+  return scaleInfo(s.scales[sheetId])
+}
+
+/** Per-shape scale lookup for quantities: a shape crossing a scale area's edge has no scale. */
+export function takeoffScales(s: Pick<AppState, 'scales' | 'scaleRegions'>) {
+  return (t: Takeoff): SheetScaleInfo | undefined => {
+    const sc = scaleForPoints(s, t.sheetId, [...t.points, ...t.holes.flat()])
+    return sc === 'mixed' ? undefined : sc
+  }
 }
 
 /** The sheet's scale in the form quantity maths needs. */
@@ -276,6 +310,8 @@ function emptyProject(): Partial<AppState> {
     markups: [],
     labelAreas: {},
     itemsPerSheet: true,
+    scaleRegions: [],
+    pendingRegion: null,
     areaPreview: {},
     areaApply: null,
     activeItemId: null,
@@ -304,6 +340,7 @@ export function toProjectData(s: AppState): ProjectData {
     markups: s.markups,
     labelAreas: s.labelAreas,
     settings: { itemsPerSheet: s.itemsPerSheet },
+    scaleRegions: s.scaleRegions,
     selectedSheetId: s.selectedSheetId,
   }
 }
@@ -493,6 +530,7 @@ export const useApp = create<AppState>((set, get) => ({
         markups: data.markups ?? [],
         labelAreas: data.labelAreas ?? {},
         itemsPerSheet: data.settings?.itemsPerSheet ?? true,
+        scaleRegions: (data.scaleRegions as ScaleRegion[] | undefined) ?? [],
         selectedSheetId: sheets.some((sh) => sh.id === data.selectedSheetId) ? data.selectedSheetId : (sheets[0]?.id ?? null),
         restoring: false,
         loading: false,
@@ -557,11 +595,11 @@ export const useApp = create<AppState>((set, get) => ({
   setTool: (tool) =>
     set((s) => {
       // Switching to a takeoff tool: keep the active item if it matches, else use the latest of that kind.
-      if (!isTakeoffTool(tool)) return { tool, cutoutFor: null }
+      if (!isTakeoffTool(tool)) return { tool, cutoutFor: null, pendingRegion: tool === 'calibrate' ? s.pendingRegion : null }
       const active = s.items.find((i) => i.id === s.activeItemId)
-      if (active?.kind === tool) return { tool, selectedTakeoffId: null, cutoutFor: null }
+      if (active?.kind === tool) return { tool, selectedTakeoffId: null, cutoutFor: null, pendingRegion: null }
       const latest = [...s.items].reverse().find((i) => i.kind === tool)
-      return { tool, activeItemId: latest?.id ?? null, selectedTakeoffId: null, cutoutFor: null }
+      return { tool, activeItemId: latest?.id ?? null, selectedTakeoffId: null, cutoutFor: null, pendingRegion: null }
     }),
 
   setRatioScale: (sheetId, c, source) => {
@@ -831,6 +869,17 @@ export const useApp = create<AppState>((set, get) => ({
     set({ areaApply: null })
     return changed
   },
+
+  scaleRegions: [],
+  pendingRegion: null,
+  setPendingRegion: (r) => set({ pendingRegion: r }),
+  addScaleRegion: (r) => {
+    const id = newId('r')
+    set((s) => ({ scaleRegions: [...s.scaleRegions, { ...r, id }], pendingRegion: null }))
+    return id
+  },
+  updateScaleRegion: (id, patch) => set((s) => ({ scaleRegions: s.scaleRegions.map((r) => (r.id === id ? { ...r, ...patch } : r)) })),
+  deleteScaleRegion: (id) => set((s) => ({ scaleRegions: s.scaleRegions.filter((r) => r.id !== id) })),
 
   showTakeoffs: true,
   showMarkups: true,

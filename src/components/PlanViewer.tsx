@@ -1,15 +1,17 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { renderPage, type RenderHandle, type SheetMeta } from '../lib/pdf'
-import { distancePt, formatLength, realMm, type Point } from '../lib/scale'
+import { distancePt, equivalentRatio, formatLength, formatRatio, mmPerPtFromRatio, realMm, type Point } from '../lib/scale'
 import { describePaperSize } from '../lib/units'
 import { ACTUAL_SIZE_SCALE, fitView, screenToPage, zoomAt, type View } from '../lib/view'
 import { distanceToPolyline, pointInPolygon, polygonAreaPt2, rectCorners, simplifyPath } from '../lib/geometry'
 import { formatQuantity, ITEM_COLOURS, KIND_LABEL, takeoffQuantity, type Takeoff, type TakeoffKind } from '../lib/takeoff'
 import { isFocused, usePanels } from '../panels'
+import { regionFor } from '../lib/scaleRegions'
+import RegionBoxes, { RegionScaleDialog } from './RegionBoxes'
 import { findImageSnap, findSnap, SegmentIndex, SNAP_LABEL, type Segment, type Snap } from '../lib/snap'
 import { getSnapSource, imageTileAt, type SnapSource } from '../lib/snapSource'
 import SnapMarkerLayer from './SnapMarker'
-import { isTakeoffTool, scaleInfo, useApp, type DrawStyle } from '../store'
+import { isTakeoffTool, scaleForPoints, useApp, type DrawStyle } from '../store'
 import TakeoffLayer, { type TakeoffDraft } from './TakeoffLayer'
 import MarkupLayer, { PrimitivesShape } from './MarkupLayer'
 import { shapeDimensions } from '../lib/dimensions'
@@ -244,7 +246,17 @@ export default function PlanViewer({ sheet }: Props) {
   const takeoffs = useMemo(() => allTakeoffs.filter((t) => t.sheetId === sheet.id), [allTakeoffs, sheet.id])
   const activeItem = itemsById.get(activeItemId ?? '')
   const drawItem = isTakeoffTool(tool) && activeItem?.kind === tool ? activeItem : undefined
-  const scaleForQty = scaleInfo(scale)
+  const scaleRegions = useApp((s) => s.scaleRegions)
+  const regionsHere = useMemo(() => scaleRegions.filter((r) => r.sheetId === sheet.id), [scaleRegions, sheet.id])
+  const pendingRegion = useApp((s) => s.pendingRegion)
+  const setPendingRegion = useApp((s) => s.setPendingRegion)
+  const addScaleRegion = useApp((s) => s.addScaleRegion)
+  const updateScaleRegion = useApp((s) => s.updateScaleRegion)
+  /** The scale for these points: their scale area, else the sheet's; 'mixed' if they cross an area's edge. */
+  const scaleAt = (pts: Point[]) => scaleForPoints({ scales: { [sheet.id]: scale }, scaleRegions: regionsHere }, sheet.id, pts)
+  /** A new scale area waiting for its scale (box drawn, dialog open). */
+  const [newRegion, setNewRegion] = useState<{ x0: number; y0: number; x1: number; y1: number } | null>(null)
+  const MIXED_NOTICE = 'That shape crosses the edge of a scale area, so it would mix two scales. Draw it inside the area, or as separate shapes.'
 
   /** Points placed so far for the shape or line being drawn. */
   const [draft, setDraft] = useState<Point[]>([])
@@ -290,15 +302,25 @@ export default function PlanViewer({ sheet }: Props) {
         setNotice('A cut-out must be inside the area. Try again, or press Esc to stop.')
         return
       }
+      if (scaleAt([...cutoutTarget.points, ...pts]) === 'mixed') {
+        setNotice(MIXED_NOTICE)
+        return
+      }
       setNotice(null)
       addCutout(cutoutTarget.id, pts)
       return
     }
     if (!isTakeoffTool(tool) || tool === 'count') return
     const degenerate = isClosedTool && polygonAreaPt2(pts) < 0.01 // e.g. a double-click on one spot
-    if (pts.length >= minPoints && !degenerate) addTakeoff(sheet.id, tool, pts)
     setDraft([])
     setCursor(null)
+    if (pts.length < minPoints || degenerate) return
+    if (scaleAt(pts) === 'mixed') {
+      setNotice(MIXED_NOTICE)
+      return
+    }
+    setNotice(null)
+    addTakeoff(sheet.id, tool, pts)
   }
 
   /** Finish a markup being drawn (two corners/ends, or a pen stroke). */
@@ -344,6 +366,7 @@ export default function PlanViewer({ sheet }: Props) {
       setNotice(null)
       if (draft.length || measured || calibLine) resetDrawing()
       else if (cutoutFor) cancelCutout()
+      else if (pendingRegion) setPendingRegion(null)
       else {
         selectTakeoff(null)
         selectMarkup(null)
@@ -623,7 +646,7 @@ export default function PlanViewer({ sheet }: Props) {
       return
     }
 
-    if (tool === 'areas') {
+    if (tool === 'areas' || tool === 'region') {
       ;(e.currentTarget as HTMLElement).setPointerCapture(e.pointerId)
       rectDrag.current = { pointerId: e.pointerId, sx: e.clientX, sy: e.clientY }
       setDraft([p])
@@ -657,6 +680,7 @@ export default function PlanViewer({ sheet }: Props) {
 
     if (tool === 'count') {
       addTakeoff(sheet.id, 'count', [p])
+      setNotice(null)
       return
     }
 
@@ -702,7 +726,16 @@ export default function PlanViewer({ sheet }: Props) {
     const line: [Point, Point] = [draft[0], p]
     setDraft([])
     if (distancePt(line[0], line[1]) < 0.5) return // ignore a double-click on the same spot
-    if (tool === 'calibrate') setCalibLine(line)
+    if (tool === 'calibrate' && pendingRegion?.sheetId === sheet.id) {
+      // calibrating a new scale area: the dimension must be inside its box
+      const r = { ...pendingRegion, id: '', sheetId: sheet.id, realMmPerPt: 0, label: '' }
+      if (regionFor(line, [r]) !== r) {
+        setNotice('Click a dimension inside the dashed box, so the scale belongs to that area.')
+        return
+      }
+      setNotice(null)
+      setCalibLine(line)
+    } else if (tool === 'calibrate') setCalibLine(line)
     else setMeasured(line)
   }
   const onDoubleClick = () => {
@@ -779,6 +812,11 @@ export default function PlanViewer({ sheet }: Props) {
         if (dragged) void setLabelArea(areaField, areaFromPoints(draft[0], pagePointFromEvent(e), sheet.widthPt, sheet.heightPt))
         setDraft([])
         setCursor(null)
+      } else if (tool === 'region') {
+        const end = pagePointFromEvent(e)
+        if (dragged) setNewRegion({ x0: Math.min(draft[0].x, end.x), y0: Math.min(draft[0].y, end.y), x1: Math.max(draft[0].x, end.x), y1: Math.max(draft[0].y, end.y) })
+        setDraft([])
+        setCursor(null)
       } else if (dragged && tool === 'markup') {
         const straight = markupOptions.type === 'line' || markupOptions.type === 'arrow'
         finishMarkup([draft[0], pagePointFromEvent(e, straight ? draft[0] : undefined)])
@@ -794,10 +832,22 @@ export default function PlanViewer({ sheet }: Props) {
 
   // ---- What to draw on the overlay ----
   const lengthLabel = (a: Point, b: Point) => {
-    if (!scale) return 'No scale'
-    const text = formatLength(realMm(distancePt(a, b), scale.realMmPerPt))
-    return scale.status === 'confirmed' ? text : `${text} (unverified)`
+    const sc = scaleAt([a, b])
+    if (sc === 'mixed') return 'Crosses a scale area'
+    if (!sc) return 'No scale'
+    const text = formatLength(realMm(distancePt(a, b), sc.realMmPerPt))
+    return sc.state === 'confirmed' ? text : `${text} (unverified)`
   }
+  /** What a calibration line sets: a new scale area being made, an existing area it's inside, or the sheet. */
+  const calibTarget: { kind: 'new'; box: { x0: number; y0: number; x1: number; y1: number }; label: string } | { kind: 'region'; id: string; label: string } | { kind: 'sheet'; label: string } = (() => {
+    if (pendingRegion?.sheetId === sheet.id) {
+      const { x0, y0, x1, y1 } = pendingRegion
+      return { kind: 'new', box: { x0, y0, x1, y1 }, label: 'the new scale area' }
+    }
+    const r = calibLine ? regionFor(calibLine, regionsHere) : null
+    if (r && r !== 'mixed') return { kind: 'region', id: r.id, label: `the scale area (${r.label})` }
+    return { kind: 'sheet', label: 'this sheet' }
+  })()
   const dimPrefs = usePanels((s) => s.dims)
   const dimsOn = dimPrefs.show !== 'off'
   const dimLook = view ? screenLook(dimPrefs, view.scale) : null
@@ -824,7 +874,9 @@ export default function PlanViewer({ sheet }: Props) {
   if (calibLine) overlayLines.push({ points: calibLine, colour: '#c2410c' })
 
   const qtyText = (t: Takeoff | { points: Point[]; holes: Point[][] }, kind: TakeoffKind) => {
-    const q = takeoffQuantity({ id: '', itemId: '', sheetId: '', ...t }, kind, scaleForQty)
+    const sc = scaleAt([...t.points, ...t.holes.flat()])
+    if (sc === 'mixed' && kind !== 'count') return 'Crosses a scale area'
+    const q = takeoffQuantity({ id: '', itemId: '', sheetId: '', ...t }, kind, sc === 'mixed' ? undefined : sc)
     if (q.value === null) return 'No scale'
     const text = formatQuantity(q.value, kind) + (kind === 'count' ? ' counted' : '')
     return q.state === 'unverified' && kind !== 'count' ? `${text} (unverified)` : text
@@ -889,6 +941,12 @@ export default function PlanViewer({ sheet }: Props) {
       ? null
       : tool === 'areas'
         ? `Drag a box round the ${FIELD_LABEL[areaField].toLowerCase()} on this sheet`
+        : tool === 'region'
+        ? 'Scale area: drag a box round the part of the sheet at a different scale (e.g. a detail)'
+        : tool === 'calibrate' && pendingRegion?.sheetId === sheet.id
+        ? draft.length === 0
+          ? 'Calibrate the new scale area: click one end of a dimension you know, inside the dashed box'
+          : 'Now click the other end (inside the box)'
         : tool === 'markup'
         ? MARKUP_HINT[markupOptions.type]
         : tool === 'select'
@@ -968,7 +1026,7 @@ export default function PlanViewer({ sheet }: Props) {
               selectedId={selectedId}
               selectedLabel={selectedLabel}
               draft={takeoffDraft}
-              dims={{ look: dimLook, show: dimPrefs.show, realMmPerPt: scale?.realMmPerPt ?? null }}
+              dims={{ look: dimLook, show: dimPrefs.show, mmPerPtFor: (pts) => { const sc = scaleAt(pts); return sc && sc !== 'mixed' ? sc.realMmPerPt : null } }}
             />
           )}
           {tool === 'areas' && (
@@ -982,8 +1040,13 @@ export default function PlanViewer({ sheet }: Props) {
           )}
           {dimLook &&
             measureDims.map((line, i) => (
-              <PrimitivesShape key={`mdim-${i}`} prims={shapeDimensions(line, false, scale?.realMmPerPt ?? null, dimLook, false, measureScreenText)} />
+              <PrimitivesShape key={`mdim-${i}`} prims={shapeDimensions(line, false, ((sc) => (sc && sc !== 'mixed' ? sc.realMmPerPt : null))(scaleAt(line)), dimLook, false, measureScreenText)} />
             ))}
+          <RegionBoxes
+            regions={regionsHere}
+            draft={tool === 'region' && draft[0] && cursor ? { x0: Math.min(draft[0].x, cursor.x), y0: Math.min(draft[0].y, cursor.y), x1: Math.max(draft[0].x, cursor.x), y1: Math.max(draft[0].y, cursor.y) } : (newRegion ?? (pendingRegion?.sheetId === sheet.id ? pendingRegion : null))}
+            scale={view.scale}
+          />
           <SnapMarkerLayer snap={snapApplies ? snap : null} scale={view.scale} />
           {showMarkups && (
             <MarkupLayer
@@ -1039,11 +1102,34 @@ export default function PlanViewer({ sheet }: Props) {
       {calibLine && (
         <CalibrateDialog
           distPt={distancePt(calibLine[0], calibLine[1])}
+          target={calibTarget.label}
           onCancel={() => setCalibLine(null)}
           onApply={(mmPerPt) => {
-            setCalibratedScale(sheet.id, mmPerPt)
+            const label = `Calibrated (≈ ${formatRatio(equivalentRatio(mmPerPt))})`
+            if (calibTarget.kind === 'new') addScaleRegion({ sheetId: sheet.id, ...calibTarget.box, realMmPerPt: mmPerPt, label })
+            else if (calibTarget.kind === 'region') updateScaleRegion(calibTarget.id, { realMmPerPt: mmPerPt, label })
+            else setCalibratedScale(sheet.id, mmPerPt)
             setCalibLine(null)
             setTool('measure')
+          }}
+        />
+      )}
+
+      {newRegion && (
+        <RegionScaleDialog
+          onCancel={() => {
+            setNewRegion(null)
+            setTool('select')
+          }}
+          onRatio={(ratio) => {
+            addScaleRegion({ sheetId: sheet.id, ...newRegion, realMmPerPt: mmPerPtFromRatio(ratio), label: `1:${ratio}` })
+            setNewRegion(null)
+            setTool('select')
+          }}
+          onCalibrate={() => {
+            setPendingRegion({ sheetId: sheet.id, ...newRegion })
+            setNewRegion(null)
+            setTool('calibrate')
           }}
         />
       )}

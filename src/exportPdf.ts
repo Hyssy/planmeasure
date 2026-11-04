@@ -6,7 +6,7 @@ import { markupPrimitives, takeoffLabelPoint, takeoffPrimitives, textBlockSize, 
 import { getPageToPdf } from './lib/pdf'
 import { buildMarkedUpPdf, type ExportPage } from './lib/pdfExport'
 import { formatQuantity, takeoffQuantity } from './lib/takeoff'
-import { scaleInfo, sheetName, useApp } from './store'
+import { sheetName, takeoffScales, useApp } from './store'
 import { shapeDimensions } from './lib/dimensions'
 import { paperLook } from './lib/dimensionLooks'
 import { mmToPt } from './lib/units'
@@ -55,7 +55,7 @@ export async function exportMarkedUpPdf(opts: PdfExportOptions): Promise<number>
     const toPdf = await getPageToPdf(sheet)
     const takeoffs = opts.takeoffs ? s.takeoffs.filter((t) => t.sheetId === sheet.id) : []
     const markups = opts.markups ? s.markups.filter((m) => m.sheetId === sheet.id) : []
-    const scale = scaleInfo(s.scales[sheet.id])
+    const scaleOf = takeoffScales(s)
     pages.push({
       fileId: sheet.fileId,
       pageNumber: sheet.pageNumber,
@@ -71,14 +71,14 @@ export async function exportMarkedUpPdf(opts: PdfExportOptions): Promise<number>
           for (const t of takeoffs) {
             const kind = itemsById.get(t.itemId)?.kind
             if (!kind || kind === 'count') continue
-            prims.push(...shapeDimensions(t.points, kind !== 'linear', scale?.realMmPerPt ?? null, look, !!t.dimFlip, measure, mmToPt(8)))
+            prims.push(...shapeDimensions(t.points, kind !== 'linear', scaleOf(t)?.realMmPerPt ?? null, look, !!t.dimFlip, measure, mmToPt(8)))
           }
         }
         if (opts.labels) {
           for (const t of takeoffs) {
             const item = itemsById.get(t.itemId)
             if (!item || item.kind === 'count') continue
-            const q = takeoffQuantity(t, item.kind, scale)
+            const q = takeoffQuantity(t, item.kind, scaleOf(t))
             const lines = [item.name, q.value === null ? 'no scale' : formatQuantity(q.value, item.kind)]
             const fontSize = 8
             const pad = 2.5
