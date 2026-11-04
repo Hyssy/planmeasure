@@ -104,6 +104,15 @@ export function sheetName(label: SheetLabel | undefined, index: number): string 
   return label?.number || `Sheet ${index + 1}`
 }
 
+/** Sheets just added that may be new versions: automatic matches, plus everything needed to match by hand. */
+export interface PendingVersions {
+  matches: VersionMatch[]
+  /** every sheet just added */
+  added: string[]
+  /** the current sheets that were already in the project */
+  existing: string[]
+}
+
 interface AppState {
   sheets: SheetMeta[]
   selectedSheetId: string | null
@@ -137,7 +146,7 @@ interface AppState {
   /** sheet versions: supersedes[newSheetId] = the sheet it replaces */
   supersedes: Supersedes
   /** added sheets that look like new versions of existing ones, waiting for the user to decide */
-  pendingVersions: VersionMatch[] | null
+  pendingVersions: PendingVersions | null
   /** mark sheets as new versions; `compare` opens Compare revisions on them */
   markVersions: (matches: VersionMatch[], compare?: boolean) => void
   dismissVersions: () => void
@@ -446,14 +455,26 @@ export const useApp = create<AppState>((set, get) => ({
       existing.map((id) => ({ id, number: s.labels[id]?.number })),
       added.map((sh) => ({ id: sh.id, number: s.labels[sh.id]?.number })),
     )
-    if (matches.length) set({ pendingVersions: matches })
+    if (matches.length) set({ pendingVersions: { matches, added: added.map((sh) => sh.id), existing } })
   },
   supersedes: {},
   pendingVersions: null,
   markVersions: (matches, compare) =>
     set((s) => {
       const supersedes = { ...s.supersedes }
-      for (const m of matches) supersedes[m.newId] = m.oldId
+      for (const m of matches) {
+        if (m.newId === m.oldId) continue
+        // one new version per sheet: a sheet already replaced by another is re-pointed to this one
+        for (const [n, o] of Object.entries(supersedes)) if (o === m.oldId && n !== m.newId) delete supersedes[n]
+        // no loops (a sheet can't be a new version of its own newer version)
+        let cur: string | undefined = m.oldId
+        let loop = false
+        while (cur) {
+          if (cur === m.newId) loop = true
+          cur = supersedes[cur]
+        }
+        if (!loop) supersedes[m.newId] = m.oldId
+      }
       const moved = matches.find((m) => m.oldId === s.selectedSheetId)
       return {
         supersedes,

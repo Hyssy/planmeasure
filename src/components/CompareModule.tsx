@@ -203,7 +203,10 @@ function toGrey(c: HTMLCanvasElement): Grey {
   return { width: c.width, height: c.height, data: g }
 }
 
-type Mode = 'slider' | 'overlay'
+type Mode = 'slider' | 'flicker' | 'overlay'
+
+/** Flicker speeds: how long each version shows (ms). */
+const FLICKER_SPEEDS = [500, 1000, 2000]
 
 function CompareView(props: { pairs: Pair[]; projectIs: 'new' | 'old'; onBack: () => void; backLabel: string; onClose: () => void }) {
   const compared = useMemo(() => props.pairs.filter((p) => p.other), [props.pairs])
@@ -214,6 +217,10 @@ function CompareView(props: { pairs: Pair[]; projectIs: 'new' | 'old'; onBack: (
   const selectSheet = useApp((s) => s.selectSheet)
   const [index, setIndex] = useState(() => Math.max(0, compared.findIndex((p) => p.mine.id === selectedSheetId)))
   const [mode, setMode] = useState<Mode>('slider')
+  // flicker: which version is showing, how fast it swaps, and whether it's swapping
+  const [flickNew, setFlickNew] = useState(true)
+  const [flickMs, setFlickMs] = useState(1000)
+  const [flickOn, setFlickOn] = useState(true)
   const [slider, setSlider] = useState(50)
   const [highlight, setHighlight] = useState(true)
   const [box, setBox] = useState({ w: 1, h: 1 })
@@ -269,6 +276,26 @@ function CompareView(props: { pairs: Pair[]; projectIs: 'new' | 'old'; onBack: (
       live = false
     }
   }, [pair, props.projectIs])
+
+  // Flicker: swap between the versions every flickMs.
+  useEffect(() => {
+    if (mode !== 'flicker' || !flickOn) return
+    const t = window.setInterval(() => setFlickNew((v) => !v), flickMs)
+    return () => window.clearInterval(t)
+  }, [mode, flickOn, flickMs])
+
+  // Space flicks by hand (and pauses the automatic swap).
+  useEffect(() => {
+    if (mode !== 'flicker') return
+    const onKey = (e: KeyboardEvent) => {
+      if (e.code !== 'Space' || (e.target as HTMLElement).closest('input, select, textarea')) return
+      e.preventDefault()
+      setFlickOn(false)
+      setFlickNew((v) => !v)
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [mode])
 
   // Track the viewing area's size.
   useEffect(() => {
@@ -349,11 +376,36 @@ function CompareView(props: { pairs: Pair[]; projectIs: 'new' | 'old'; onBack: (
           ›
         </button>
         <div className="h-5 w-px bg-white/20" />
-        {(['slider', 'overlay'] as Mode[]).map((m) => (
-          <button key={m} onClick={() => setMode(m)} aria-pressed={mode === m} className={`rounded px-2.5 py-1 ${mode === m ? 'bg-accent text-graphite' : 'hover:bg-white/10'}`} data-testid={`compare-mode-${m}`}>
-            {m === 'slider' ? 'Slider' : 'Overlay'}
+        {(['slider', 'flicker', 'overlay'] as Mode[]).map((m) => (
+          <button
+            key={m}
+            onClick={() => {
+              setMode(m)
+              if (m === 'flicker') setFlickOn(true)
+            }}
+            aria-pressed={mode === m}
+            className={`rounded px-2.5 py-1 ${mode === m ? 'bg-accent text-graphite' : 'hover:bg-white/10'}`}
+            data-testid={`compare-mode-${m}`}
+            title={m === 'flicker' ? 'Swap between the old and new version so small changes jump out' : undefined}
+          >
+            {m === 'slider' ? 'Slider' : m === 'flicker' ? 'Flicker' : 'Overlay'}
           </button>
         ))}
+        {mode === 'flicker' && (
+          <span className="flex items-center gap-1 rounded bg-white/10 px-1.5 py-0.5 text-xs" data-testid="flicker-controls">
+            <button onClick={() => setFlickOn(!flickOn)} className="rounded px-1.5 py-0.5 hover:bg-white/10" data-testid="flicker-play">
+              {flickOn ? 'Pause' : 'Play'}
+            </button>
+            <select value={flickMs} onChange={(e) => setFlickMs(Number(e.target.value))} className="rounded bg-graphite px-1 py-0.5 text-chalk" aria-label="Flicker speed" data-testid="flicker-speed">
+              {FLICKER_SPEEDS.map((ms) => (
+                <option key={ms} value={ms}>
+                  every {ms / 1000} s
+                </option>
+              ))}
+            </select>
+            <span className="text-foundation-grey">Space to flick by hand</span>
+          </span>
+        )}
         <label className="flex items-center gap-1">
           <input type="checkbox" checked={highlight} onChange={(e) => setHighlight(e.target.checked)} /> Highlight changes
         </label>
@@ -389,10 +441,24 @@ function CompareView(props: { pairs: Pair[]; projectIs: 'new' | 'old'; onBack: (
           onPointerUp={() => (drag.current = null)}
         >
           {busy && <div className="absolute inset-0 z-10 flex items-center justify-center text-chalk">Comparing…</div>}
+          {mode === 'flicker' && !busy && (
+            <div
+              className={`pointer-events-none absolute top-3 left-3 z-10 rounded px-3 py-1 text-lg font-bold ${flickNew ? 'bg-graphite text-chalk' : 'bg-accent text-graphite'}`}
+              data-testid="flicker-label"
+            >
+              {flickNew ? 'NEW' : 'OLD'}
+            </div>
+          )}
           {result && !busy && (
             <div className="absolute top-0 left-0" style={{ transform: `translate(${zoom.x}px, ${zoom.y}px) scale(${zoom.k})`, transformOrigin: '0 0', width: result.w * display, height: result.h * display }}>
               {mode === 'overlay' ? (
                 <img src={result.overlay} alt="Overlay of both versions" className="absolute inset-0 h-full w-full bg-white" draggable={false} data-testid="compare-overlay" />
+              ) : mode === 'flicker' ? (
+                <>
+                  {/* both stay loaded; only one is visible, so the swap is instant */}
+                  <img src={result.old} alt="Old version" className="absolute inset-0 h-full w-full bg-white" style={{ visibility: flickNew ? 'hidden' : 'visible' }} draggable={false} />
+                  <img src={result.new} alt="New version" className="absolute inset-0 h-full w-full bg-white" style={{ visibility: flickNew ? 'visible' : 'hidden' }} draggable={false} />
+                </>
               ) : (
                 <>
                   <img src={result.new} alt="New version" className="absolute inset-0 h-full w-full bg-white" draggable={false} />

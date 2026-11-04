@@ -3,7 +3,7 @@ import { usePanels } from '../panels'
 import CollapsedRail, { CollapseButton } from './CollapsedRail'
 import type { SheetMeta } from '../lib/pdf'
 import { paperSizeFromPt } from '../lib/units'
-import { sheetGroups, versionNumber } from '../lib/versions'
+import { isSuperseded, sheetGroups, versionNumber } from '../lib/versions'
 import { sheetName, useApp, type SheetLabel, type SheetScale } from '../store'
 
 export default function SheetList() {
@@ -228,11 +228,20 @@ function OlderVersions({ sheet, older }: { sheet: SheetMeta; older: SheetMeta[] 
 
 function LabelEditor(props: { sheet: SheetMeta; label: SheetLabel | undefined; onDone: () => void }) {
   const setLabel = useApp((s) => s.setLabel)
+  const sheets = useApp((s) => s.sheets)
+  const labels = useApp((s) => s.labels)
+  const supersedes = useApp((s) => s.supersedes)
+  const markVersions = useApp((s) => s.markVersions)
   const [number, setNumber] = useState(props.label?.number ?? '')
   const [title, setTitle] = useState(props.label?.title ?? '')
+  const [versionOf, setVersionOf] = useState('')
+  // a sheet with no earlier version can be marked as the new version of another current sheet
+  const canLink = !supersedes[props.sheet.id]
+  const candidates = canLink ? sheets.filter((s) => s.id !== props.sheet.id && !isSuperseded(s.id, supersedes)) : []
   const save = (e: React.FormEvent) => {
     e.preventDefault()
     setLabel(props.sheet.id, number, title)
+    if (versionOf) markVersions([{ newId: props.sheet.id, oldId: versionOf }])
     props.onDone()
   }
   return (
@@ -252,6 +261,24 @@ function LabelEditor(props: { sheet: SheetMeta; label: SheetLabel | undefined; o
         aria-label="Sheet title"
         className="w-full rounded border border-neutral-300 px-1.5 py-1 text-xs focus:border-graphite focus:outline-none"
       />
+      {candidates.length > 0 && (
+        <label className="block text-[11px] text-neutral-600">
+          New version of another sheet?
+          <select
+            value={versionOf}
+            onChange={(e) => setVersionOf(e.target.value)}
+            className="mt-0.5 w-full rounded border border-neutral-300 px-1 py-0.5 text-xs text-graphite"
+            data-testid="version-of"
+          >
+            <option value="">— no —</option>
+            {candidates.map((c) => (
+              <option key={c.id} value={c.id}>
+                {sheetName(labels[c.id], sheets.indexOf(c))} {labels[c.id]?.title ?? ''} · {c.fileName} p{c.pageNumber}
+              </option>
+            ))}
+          </select>
+        </label>
+      )}
       <div className="flex justify-end gap-1">
         <button type="button" onClick={props.onDone} className="rounded px-2 py-0.5 text-xs hover:bg-neutral-200">
           Cancel
