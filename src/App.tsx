@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import AddPlansDialog from './components/AddPlansDialog'
 import VersionsDialog, { CompareRequest } from './components/VersionsDialog'
 import MoveTakeoffsDialog from './components/MoveTakeoffsDialog'
+import { UpdateBanner } from './components/AppInstall'
 import ItemsPanel from './components/ItemsPanel'
 import OptionsBar from './components/OptionsBar'
 import PlanViewer from './components/PlanViewer'
@@ -142,6 +143,7 @@ export default function App() {
       <VersionsDialog />
       <CompareRequest />
       <MoveTakeoffsDialog />
+      <UpdateBanner />
     </div>
   )
 }

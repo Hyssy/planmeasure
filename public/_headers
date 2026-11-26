@@ -19,3 +19,9 @@
   Cache-Control: public, max-age=604800
 /tesseract/*
   Cache-Control: public, max-age=604800
+
+# The desktop app's offline helper: always check for a new version.
+/sw.js
+  Cache-Control: no-cache
+/manifest.webmanifest
+  Cache-Control: no-cache

@@ -1,3 +1,4 @@
+import { DesktopAppSettings } from './AppInstall'
 import { usePanels, type DimensionPrefs } from '../panels'
 
 /** Personal display settings: dimensions and snapping. Saved in this browser. */
@@ -102,6 +103,8 @@ export default function SettingsDialog({ onClose }: { onClose: () => void }) {
             <span className="block text-xs text-neutral-500">Adds “Compare” to the header: open another version of the plans and see what changed, with a before/after slider and changes highlighted.</span>
           </span>
         </label>
+
+        <DesktopAppSettings />
 
         <div className="mt-4 flex justify-end">
           <button onClick={onClose} className="rounded bg-accent px-3 py-1.5 font-medium text-graphite hover:bg-accent-hover">

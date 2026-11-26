@@ -112,6 +112,12 @@ A browser-based PDF takeoff and markup tool for construction plans (architectura
 - **Font:** **Arial** (the guide's approved fallback) until the ABC Diatype web licence is confirmed; then add the font files and change `--font-sans`.
 - Takeoff item colours and markup colours are a separate, distinguishable set, not brand colours.
 
+## Desktop app (installable, added by Jordan)
+- Chosen over an Electron .exe (decided by Jordan): CycloMeasure is an **installable web app**. In Chrome/Edge, "Install app" (header button when the browser offers it, or Settings → Desktop app) gives its own window, a Start-menu/taskbar icon, offline use, automatic updates, and the **same projects as cyclomeasure.space** (same web address, same browser storage).
+- Pieces: `public/manifest.webmanifest` (name, colours, icons in `public/icons/`, rendered unchanged from the Cyclo icon `public/favicon.svg`); the offline helper `src/sw-template.js`, turned into `dist/sw.js` at build time by the `offlineHelper` plugin in `vite.config.ts` (lists the app's files and a version hash); `src/pwa.ts` (registers it in production builds only, install prompt, update detection); `src/components/AppInstall.tsx` (Install button, "new version ready → Reload" banner, Settings section).
+- The offline helper stores **only the app's own files** (app, PDF engine; OCR files once used) — never plans or projects — and only talks to this site. The page loads online-first (so Cloudflare Access sign-in and new versions are seen), stored copy when offline. A new version **never reloads by itself**: the banner asks. The manifest link uses `crossorigin="use-credentials"` so it's fetched with the Access sign-in; `/sw.js` and the manifest are `no-cache` in `public/_headers`.
+- If the browser doesn't offer to install on the live site, add a Cloudflare Access **Bypass** rule for `/manifest.webmanifest` and `/icons/*` (public, harmless files).
+
 ## Hosting
 - Code lives in a **private GitHub repo**.
 - **Live at https://cyclomeasure.space** (custom domain, bought through Cloudflare; also reachable at https://planmeasure.jordan-hyslop97.workers.dev). Deployed on Cloudflare as a Worker serving static assets, connected to the repo; every push to `main` redeploys (build command `npm run build`, output folder `dist`). Staff should use **cyclomeasure.space only** — projects are saved per web address, so work done at the workers.dev address won't appear there.

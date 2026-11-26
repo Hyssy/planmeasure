@@ -3,6 +3,7 @@ import wordmark from '../assets/brand/cyclo-wordmark-chalk.svg'
 import { isFocused, usePanels } from '../panels'
 import { useApp, type Tool } from '../store'
 import ExportPdfDialog from './ExportPdfDialog'
+import { InstallButton } from './AppInstall'
 import CompareModule from './CompareModule'
 import SettingsDialog from './SettingsDialog'
 import ProjectMenu from './ProjectMenu'
@@ -98,6 +99,7 @@ export default function Toolbar() {
         <ExportPdfButton />
         <CompareButton />
         <SettingsButton />
+        <InstallButton />
       </div>
       <span className={`ml-auto hidden text-xs whitespace-nowrap text-foundation-grey ${slim ? '' : '2xl:inline'}`}>
         Scroll to zoom · Space+drag to pan · files stay on your computer

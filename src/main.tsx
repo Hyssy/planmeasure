@@ -3,8 +3,10 @@ import { createRoot } from 'react-dom/client'
 import './index.css'
 import App from './App.tsx'
 import { startPersistence } from './persist'
+import { startPwa } from './pwa'
 
 startPersistence()
+startPwa()
 
 // Let automated tests inspect app state (development builds only).
 if (import.meta.env.DEV) void import('./store').then(({ useApp }) => Object.assign(window, { __planmeasure: useApp }))
